@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 interface Item {
   id: number;
   gsm: number;
-  bill_number: string;
+  sale_bill_number: string;
   size: string;
   rate: number;
   bf?: number | null;
@@ -13,6 +13,8 @@ interface Item {
   bought_from_mill?: string | null;
   sold_to?: string | null;
   purchase_bill_number?: string | null;
+  sale_bill_date?: string | null;
+  purchase_bill_date?: string | null;
   created_at: string;
 }
 
@@ -20,6 +22,7 @@ export default function ItemsList() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const fetchItems = async () => {
     try {
@@ -53,6 +56,32 @@ export default function ItemsList() {
     return () => window.removeEventListener('refreshItems', handleRefresh);
   }, []);
 
+  const handleDelete = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this item? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setDeletingId(id);
+      const response = await fetch(`/api/items/${id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete item');
+      }
+
+      // Refresh the list
+      fetchItems();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to delete item');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
       year: 'numeric',
@@ -60,6 +89,15 @@ export default function ItemsList() {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+    });
+  };
+
+  const formatDateOnly = (dateString: string | null | undefined) => {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
     });
   };
 
@@ -96,10 +134,16 @@ export default function ItemsList() {
               GSM
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Bill Number
+              Sale Bill Number
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Sale Bill Date
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Purchase Bill
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Purchase Bill Date
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Size
@@ -122,6 +166,9 @@ export default function ItemsList() {
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Created At
             </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
@@ -131,10 +178,16 @@ export default function ItemsList() {
                 {item.gsm}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                {item.bill_number}
+                {item.sale_bill_number}
+              </td>
+              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                {formatDateOnly(item.sale_bill_date)}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {item.purchase_bill_number || '-'}
+              </td>
+              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                {formatDateOnly(item.purchase_bill_date)}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {item.size}
@@ -156,6 +209,15 @@ export default function ItemsList() {
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                 {formatDate(item.created_at)}
+              </td>
+              <td className="px-4 py-4 whitespace-nowrap text-sm">
+                <button
+                  onClick={() => handleDelete(item.id)}
+                  disabled={deletingId === item.id}
+                  className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                </button>
               </td>
             </tr>
           ))}

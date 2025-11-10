@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 export async function GET() {
   try {
     const items = await sql`
-      SELECT id, gsm, bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number, created_at
+      SELECT id, gsm, sale_bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number, sale_bill_date, purchase_bill_date, created_at
       FROM items
       ORDER BY created_at DESC
       LIMIT 10
@@ -28,21 +28,21 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { gsm, bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number } = body;
+    const { gsm, sale_bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number, sale_bill_date, purchase_bill_date } = body;
 
     // Validate required fields
-    if (!gsm || !bill_number || !size || rate === undefined || rate === null) {
+    if (!gsm || !sale_bill_number || !size || rate === undefined || rate === null || !shade || !sold_to || bf === undefined || bf === null) {
       return NextResponse.json(
-        { success: false, error: 'GSM, Bill Number, Size, and Rate are required' },
+        { success: false, error: 'GSM, Sale Bill Number, Size, Rate, BF, Shade, and Sold To are required' },
         { status: 400 }
       );
     }
 
     // Insert new item
     const result = await sql`
-      INSERT INTO items (gsm, bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number)
-      VALUES (${gsm}, ${bill_number}, ${size}, ${rate}, ${bf || null}, ${shade || null}, ${bought_from_mill || null}, ${sold_to || null}, ${purchase_bill_number || null})
-      RETURNING id, gsm, bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number, created_at
+      INSERT INTO items (gsm, sale_bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number, sale_bill_date, purchase_bill_date)
+      VALUES (${gsm}, ${sale_bill_number}, ${size}, ${rate}, ${bf}, ${shade}, ${bought_from_mill || null}, ${sold_to}, ${purchase_bill_number || null}, ${sale_bill_date || null}, ${purchase_bill_date || null})
+      RETURNING id, gsm, sale_bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number, sale_bill_date, purchase_bill_date, created_at
     `;
 
     return NextResponse.json({
