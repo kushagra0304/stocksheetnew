@@ -10,6 +10,7 @@ interface Item {
   size: string;
   rate: number;
   bf?: number | null;
+  weight?: number | null;
   shade?: string | null;
   bought_from_mill?: string | null;
   sold_to?: string | null;
@@ -30,6 +31,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     size: '',
     rate: '',
     bf: '',
+    weight: '',
     shade: '',
     bought_from_mill: '',
     sold_to: '',
@@ -69,6 +71,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
             size: lastItem.size || '',
             rate: lastItem.rate?.toString() || '',
             bf: lastItem.bf?.toString() || '',
+            weight: lastItem.weight?.toString() || '',
             shade: lastItem.shade || '',
             bought_from_mill: lastItem.bought_from_mill || '',
             sold_to: lastItem.sold_to || '',
@@ -104,6 +107,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
           size: formData.size,
           rate: parseFloat(formData.rate),
           bf: parseFloat(formData.bf),
+          weight: parseFloat(formData.weight),
           shade: formData.shade,
           bought_from_mill: formData.bought_from_mill || null,
           sold_to: formData.sold_to,
@@ -142,6 +146,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
           size: insertedItem.size || '',
           rate: insertedItem.rate?.toString() || '',
           bf: insertedItem.bf?.toString() || '',
+          weight: insertedItem.weight?.toString() || '',
           shade: insertedItem.shade || '',
           bought_from_mill: insertedItem.bought_from_mill || '',
           sold_to: insertedItem.sold_to || '',
@@ -223,6 +228,22 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
               onChange={(e) => setFormData({ ...formData, bf: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
               placeholder="Enter BF"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="weight" className="block text-sm font-medium text-gray-700 mb-1">
+              Weight
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              id="weight"
+              required
+              value={formData.weight}
+              onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
+              placeholder="Enter Weight"
             />
           </div>
 

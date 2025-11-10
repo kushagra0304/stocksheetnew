@@ -9,6 +9,7 @@ interface Item {
   size: string;
   rate: number;
   bf?: number | null;
+  weight?: number | null;
   shade?: string | null;
   bought_from_mill?: string | null;
   sold_to?: string | null;
@@ -155,6 +156,9 @@ export default function ItemsList() {
               BF
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Weight
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Shade
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -197,6 +201,9 @@ export default function ItemsList() {
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {item.bf ? parseFloat(item.bf.toString()).toFixed(2) : '-'}
+              </td>
+              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                {item.weight ? parseFloat(item.weight.toString()).toFixed(2) : '-'}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {item.shade || '-'}

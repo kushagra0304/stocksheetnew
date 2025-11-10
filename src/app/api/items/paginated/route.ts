@@ -34,7 +34,7 @@ export async function GET(request: Request) {
 
     // Get paginated items
     const items = await sql`
-      SELECT id, gsm, sale_bill_number, size, rate, bf, shade, bought_from_mill, sold_to, purchase_bill_number, sale_bill_date, purchase_bill_date, created_at
+      SELECT id, gsm, sale_bill_number, size, rate, bf, weight, shade, bought_from_mill, sold_to, purchase_bill_number, sale_bill_date, purchase_bill_date, created_at
       FROM items
       ORDER BY created_at DESC
       LIMIT ${limit}
