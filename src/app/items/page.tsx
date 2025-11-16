@@ -5,28 +5,21 @@ import { useRouter } from 'next/navigation';
 
 interface Item {
   id: number;
+  reel_number: string;
   gsm: number;
-  sale_bill_number: string;
   size: string;
-  rate: number;
+  size_unit?: string | null;
+  rate?: number | null;
   bf?: number | null;
   weight?: number | null;
   shade?: string | null;
-  bought_from_mill?: string | null;
-  sold_to?: string | null;
   purchase_bill_number?: string | null;
-  sale_bill_date?: string | null;
   purchase_bill_date?: string | null;
+  bought_from_mill?: string | null;
+  sale_bill_number?: string | null;
+  sale_bill_date?: string | null;
+  sold_to?: string | null;
   created_at: string;
-}
-
-interface PaginationInfo {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-  hasNext: boolean;
-  hasPrev: boolean;
 }
 
 export default function ItemsPage() {
@@ -34,15 +27,17 @@ export default function ItemsPage() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [pagination, setPagination] = useState<PaginationInfo | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    // Default to today's date in YYYY-MM-DD format
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  });
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const fetchItems = async (page: number, limit: number) => {
+  const fetchItems = async (date: string) => {
     try {
       setLoading(true);
-      const response = await fetch(`/api/items/paginated?page=${page}&limit=${limit}`);
+      const response = await fetch(`/api/items/by-date?date=${date}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -50,7 +45,6 @@ export default function ItemsPage() {
       }
 
       setItems(data.data || []);
-      setPagination(data.pagination);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -60,8 +54,8 @@ export default function ItemsPage() {
   };
 
   useEffect(() => {
-    fetchItems(currentPage, itemsPerPage);
-  }, [currentPage, itemsPerPage]);
+    fetchItems(selectedDate);
+  }, [selectedDate]);
 
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this item? This action cannot be undone.')) {
@@ -80,8 +74,8 @@ export default function ItemsPage() {
         throw new Error(data.error || 'Failed to delete item');
       }
 
-      // Refresh the current page
-      await fetchItems(currentPage, itemsPerPage);
+      // Refresh the items for the current date
+      await fetchItems(selectedDate);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to delete item');
     } finally {
@@ -108,13 +102,44 @@ export default function ItemsPage() {
     });
   };
 
+  const formatDisplayDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSelectedDate(e.target.value);
+  };
+
+  const goToPreviousDay = () => {
+    const date = new Date(selectedDate);
+    date.setDate(date.getDate() - 1);
+    setSelectedDate(date.toISOString().split('T')[0]);
+  };
+
+  const goToNextDay = () => {
+    const date = new Date(selectedDate);
+    date.setDate(date.getDate() + 1);
+    setSelectedDate(date.toISOString().split('T')[0]);
+  };
+
+  const goToToday = () => {
+    const today = new Date();
+    setSelectedDate(today.toISOString().split('T')[0]);
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">View All Items</h1>
-            <p className="text-gray-600">Browse and manage all items in the database</p>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">View Items by Date</h1>
+            <p className="text-gray-600">View all items for a specific day</p>
           </div>
           <button
             onClick={() => router.push('/')}
@@ -124,25 +149,45 @@ export default function ItemsPage() {
           </button>
         </div>
 
-        {/* Items per page selector */}
-        <div className="mb-4 flex items-center gap-4">
-          <label htmlFor="itemsPerPage" className="text-sm font-medium text-gray-700">
-            Items per page:
-          </label>
-          <select
-            id="itemsPerPage"
-            value={itemsPerPage}
-            onChange={(e) => {
-              setItemsPerPage(parseInt(e.target.value));
-              setCurrentPage(1);
-            }}
-            className="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="10">10</option>
-            <option value="20">20</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-          </select>
+        {/* Date selector */}
+        <div className="mb-6 bg-white rounded-lg shadow-md p-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex-1">
+              <label htmlFor="datePicker" className="block text-sm font-medium text-gray-700 mb-2">
+                Select Date
+              </label>
+              <input
+                type="date"
+                id="datePicker"
+                value={selectedDate}
+                onChange={handleDateChange}
+                className="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={goToPreviousDay}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                ← Previous Day
+              </button>
+              <button
+                onClick={goToToday}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                Today
+              </button>
+              <button
+                onClick={goToNextDay}
+                className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                Next Day →
+              </button>
+            </div>
+          </div>
+          <div className="mt-3 text-sm text-gray-600">
+            Showing items for: <span className="font-semibold">{formatDisplayDate(selectedDate)}</span>
+          </div>
         </div>
 
         {error && (
@@ -156,11 +201,15 @@ export default function ItemsPage() {
             <p className="text-gray-500">Loading items...</p>
           </div>
         ) : items.length === 0 ? (
-          <div className="text-center py-8">
-            <p className="text-gray-500">No items found.</p>
+          <div className="text-center py-8 bg-white rounded-lg shadow-md p-6">
+            <p className="text-gray-500 text-lg">No items found for {formatDisplayDate(selectedDate)}</p>
+            <p className="text-gray-400 text-sm mt-2">Try selecting a different date</p>
           </div>
         ) : (
           <>
+            <div className="mb-4 text-sm text-gray-600">
+              Found <span className="font-semibold">{items.length}</span> item{items.length !== 1 ? 's' : ''} for this day
+            </div>
             <div className="bg-white rounded-lg shadow-md overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
@@ -179,6 +228,9 @@ export default function ItemsPage() {
                         Size
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Unit
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Rate
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -186,6 +238,9 @@ export default function ItemsPage() {
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Weight
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Reel Number
                       </th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Shade
@@ -208,7 +263,7 @@ export default function ItemsPage() {
                           {item.gsm}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                          {item.sale_bill_number}
+                          {item.sale_bill_number || '-'}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                           {formatDateOnly(item.sale_bill_date)}
@@ -217,13 +272,19 @@ export default function ItemsPage() {
                           {item.size}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                          ₹{parseFloat(item.rate.toString()).toFixed(2)}
+                          {item.size_unit || '-'}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.rate ? `₹${parseFloat(item.rate.toString()).toFixed(2)}` : '-'}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.bf ? parseFloat(item.bf.toString()).toFixed(2) : '-'}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.weight ? parseFloat(item.weight.toString()).toFixed(2) : '-'}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {item.reel_number || '-'}
                         </td>
                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                           {item.shade || '-'}
@@ -249,65 +310,9 @@ export default function ItemsPage() {
                 </table>
               </div>
             </div>
-
-            {/* Pagination */}
-            {pagination && pagination.totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between">
-                <div className="text-sm text-gray-700">
-                  Showing {(currentPage - 1) * itemsPerPage + 1} to{' '}
-                  {Math.min(currentPage * itemsPerPage, pagination.total)} of{' '}
-                  {pagination.total} items
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    disabled={!pagination.hasPrev || loading}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Previous
-                  </button>
-                  <div className="flex items-center gap-1">
-                    {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                      let pageNum;
-                      if (pagination.totalPages <= 5) {
-                        pageNum = i + 1;
-                      } else if (currentPage <= 3) {
-                        pageNum = i + 1;
-                      } else if (currentPage >= pagination.totalPages - 2) {
-                        pageNum = pagination.totalPages - 4 + i;
-                      } else {
-                        pageNum = currentPage - 2 + i;
-                      }
-                      return (
-                        <button
-                          key={pageNum}
-                          onClick={() => setCurrentPage(pageNum)}
-                          disabled={loading}
-                          className={`px-3 py-2 rounded-md ${
-                            currentPage === pageNum
-                              ? 'bg-blue-600 text-white'
-                              : 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50'
-                          } disabled:opacity-50 disabled:cursor-not-allowed`}
-                        >
-                          {pageNum}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button
-                    onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
-                    disabled={!pagination.hasNext || loading}
-                    className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            )}
           </>
         )}
       </div>
     </div>
   );
 }
-

@@ -4,18 +4,20 @@ import { useEffect, useState } from 'react';
 
 interface Item {
   id: number;
+  reel_number: string;
   gsm: number;
-  sale_bill_number: string;
   size: string;
-  rate: number;
+  size_unit?: string | null;
+  rate?: number | null;
   bf?: number | null;
   weight?: number | null;
   shade?: string | null;
-  bought_from_mill?: string | null;
-  sold_to?: string | null;
   purchase_bill_number?: string | null;
-  sale_bill_date?: string | null;
   purchase_bill_date?: string | null;
+  bought_from_mill?: string | null;
+  sale_bill_number?: string | null;
+  sale_bill_date?: string | null;
+  sold_to?: string | null;
   created_at: string;
 }
 
@@ -150,6 +152,9 @@ export default function ItemsList() {
               Size
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Unit
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Rate
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -157,6 +162,9 @@ export default function ItemsList() {
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Weight
+            </th>
+            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+              Reel Number
             </th>
             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
               Shade
@@ -182,7 +190,7 @@ export default function ItemsList() {
                 {item.gsm}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                {item.sale_bill_number}
+                {item.sale_bill_number || '-'}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {formatDateOnly(item.sale_bill_date)}
@@ -197,13 +205,19 @@ export default function ItemsList() {
                 {item.size}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
-                ₹{parseFloat(item.rate.toString()).toFixed(2)}
+                {item.size_unit || '-'}
+              </td>
+              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                {item.rate ? `₹${parseFloat(item.rate.toString()).toFixed(2)}` : '-'}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {item.bf ? parseFloat(item.bf.toString()).toFixed(2) : '-'}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {item.weight ? parseFloat(item.weight.toString()).toFixed(2) : '-'}
+              </td>
+              <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
+                {item.reel_number || '-'}
               </td>
               <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-900">
                 {item.shade || '-'}

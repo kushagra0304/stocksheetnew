@@ -1,173 +1,374 @@
 'use client';
 
-import { useState, FormEvent, useEffect } from 'react';
-import AutocompleteInput from './AutocompleteInput';
+import { useState, FormEvent, useEffect, useRef, useCallback } from 'react';
 
-interface Item {
+interface Reel {
   id: number;
+  reel_number: string;
   gsm: number;
-  sale_bill_number: string;
   size: string;
+  size_unit: string;
+  bf: number;
+  weight: number;
+  shade: string;
   rate: number;
-  bf?: number | null;
-  weight?: number | null;
-  shade?: string | null;
-  bought_from_mill?: string | null;
-  sold_to?: string | null;
-  purchase_bill_number?: string | null;
-  sale_bill_date?: string | null;
-  purchase_bill_date?: string | null;
-  created_at: string;
+  purchase_id?: number;
+  sale_id?: number | null;
+  purchase_bill_number?: string;
+  purchase_bill_date?: string;
+  bought_from_mill?: string;
 }
 
 interface ItemFormProps {
   onItemAdded: () => void;
 }
 
+type FormMode = 'purchase' | 'sale';
+
+// localStorage utility functions
+const STORAGE_KEYS = {
+  PURCHASE_FORM: 'stocksheet_purchase_form',
+  SALE_FORM: 'stocksheet_sale_form',
+  FORM_MODE: 'stocksheet_form_mode',
+};
+
+const saveToLocalStorage = (key: string, data: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (error) {
+    console.error('Error saving to localStorage:', error);
+  }
+};
+
+const loadFromLocalStorage = <T,>(key: string): T | null => {
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) as T : null;
+  } catch (error) {
+    console.error('Error loading from localStorage:', error);
+    return null;
+  }
+};
+
+const clearLocalStorage = (keys: string[]) => {
+  try {
+    keys.forEach(key => localStorage.removeItem(key));
+  } catch (error) {
+    console.error('Error clearing localStorage:', error);
+  }
+};
+
 export default function ItemForm({ onItemAdded }: ItemFormProps) {
-  const [formData, setFormData] = useState({
-    gsm: '',
-    sale_bill_number: '',
-    size: '',
-    rate: '',
-    bf: '',
-    weight: '',
-    shade: '',
-    bought_from_mill: '',
-    sold_to: '',
-    purchase_bill_number: '',
-    sale_bill_date: '',
-    purchase_bill_date: '',
-  });
+  const [mode, setMode] = useState<FormMode>('purchase');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [dataRestored, setDataRestored] = useState(false);
+  const isInitialMount = useRef(true);
+  const shouldSave = useRef(true);
+  
+  // Helper function to check if purchase form is empty (default state)
+  const isPurchaseFormEmpty = useCallback((pData: typeof purchaseData, pReels: typeof purchaseReels) => {
+    return !pData.purchase_bill_number && 
+           pReels.every(reel => !reel.reel_number && !reel.gsm && !reel.size);
+  }, []);
+  
+  // Helper function to check if sale form is empty (default state)
+  const isSaleFormEmpty = useCallback((sData: typeof saleData, sReels: typeof selectedReels) => {
+    return !sData.sale_bill_number && sReels.length === 0;
+  }, []);
+  
+  // ENUM options
+  const [shadeOptions, setShadeOptions] = useState<string[]>([]);
+  const [soldToOptions, setSoldToOptions] = useState<string[]>([]);
+  const [boughtFromMillOptions, setBoughtFromMillOptions] = useState<string[]>([]);
+  
+  // Purchase form data
+  const [purchaseData, setPurchaseData] = useState({
+    purchase_bill_number: '',
+    purchase_bill_date: '',
+    bought_from_mill: '',
+  });
+  
+  // Sale form data
+  const [saleData, setSaleData] = useState({
+    sale_bill_number: '',
+    sale_bill_date: '',
+    sold_to: '',
+  });
+  
+  // Reels for purchase mode (array of reel objects)
+  const [purchaseReels, setPurchaseReels] = useState([{
+    reel_number: '',
+    gsm: '',
+    size: '',
+    size_unit: '',
+    bf: '',
+    weight: '',
+    shade: '',
+  }]);
+  
+  // Available reels for sale mode
+  const [availableReels, setAvailableReels] = useState<Reel[]>([]);
+  // Loading state for available reels
+  const [isLoadingReels, setIsLoadingReels] = useState(false);
+  // Selected reels for sale (with rates)
+  const [selectedReels, setSelectedReels] = useState<{ reel_id: number; rate: string }[]>([]);
 
-  // Load last item on mount to populate default values
+  // Load ENUM options and restore form data from localStorage
   useEffect(() => {
-    const loadLastItem = async () => {
+    const loadData = async () => {
       try {
-        const response = await fetch('/api/items');
-        const data = await response.json();
-        if (data.success && data.data && data.data.length > 0) {
-          const lastItem: Item = data.data[0]; // First item is the most recent
-          
-          // Format dates for HTML date input (YYYY-MM-DD)
-          const formatDateForInput = (dateString: string | null | undefined): string => {
-            if (!dateString) return '';
-            try {
-              const date = new Date(dateString);
-              if (isNaN(date.getTime())) return '';
-              return date.toISOString().split('T')[0];
-            } catch {
-              return '';
+        // Load ENUM options
+        const [shadeRes, soldToRes, boughtFromMillRes] = await Promise.all([
+          fetch('/api/items/options?field=shade'),
+          fetch('/api/items/options?field=sold_to'),
+          fetch('/api/items/options?field=bought_from_mill'),
+        ]);
+        
+        const shadeData = await shadeRes.json();
+        const soldToData = await soldToRes.json();
+        const boughtFromMillData = await boughtFromMillRes.json();
+        
+        if (shadeData.success) setShadeOptions(shadeData.data || []);
+        if (soldToData.success) setSoldToOptions(soldToData.data || []);
+        if (boughtFromMillData.success) setBoughtFromMillOptions(boughtFromMillData.data || []);
+        
+        // Restore form data from localStorage
+        const savedMode = loadFromLocalStorage<FormMode>(STORAGE_KEYS.FORM_MODE);
+        
+        if (savedMode) {
+          setMode(savedMode);
+        }
+
+        // Check for purchase data (either if mode is purchase or if we have purchase data)
+        const savedPurchaseData = loadFromLocalStorage<{
+          purchaseData: typeof purchaseData;
+          purchaseReels: typeof purchaseReels;
+        }>(STORAGE_KEYS.PURCHASE_FORM);
+        
+        // Check for sale data
+        const savedSaleData = loadFromLocalStorage<{
+          saleData: typeof saleData;
+          selectedReels: typeof selectedReels;
+        }>(STORAGE_KEYS.SALE_FORM);
+
+        // Restore mode first
+        const modeToRestore = savedMode || 'purchase';
+        if (savedMode) {
+          setMode(savedMode);
+        }
+
+        // Restore purchase data if it exists in localStorage (regardless of mode)
+        if (savedPurchaseData) {
+          shouldSave.current = false;
+          setPurchaseData(savedPurchaseData.purchaseData);
+          setPurchaseReels(savedPurchaseData.purchaseReels.length > 0 
+            ? savedPurchaseData.purchaseReels 
+            : [{ reel_number: '', gsm: '', size: '', size_unit: '', bf: '', weight: '', shade: '' }]);
+          setDataRestored(true);
+          setTimeout(() => setDataRestored(false), 5000);
+          shouldSave.current = true;
+        }
+
+        // Restore sale data if it exists in localStorage (regardless of mode)
+        if (savedSaleData) {
+          shouldSave.current = false;
+          setSaleData(savedSaleData.saleData);
+          setSelectedReels(savedSaleData.selectedReels || []);
+          setDataRestored(true);
+          setTimeout(() => setDataRestored(false), 5000);
+          shouldSave.current = true;
+        }
+        
+        // Load available reels for sale mode
+        if (modeToRestore === 'sale') {
+          setIsLoadingReels(true);
+          try {
+            const reelsRes = await fetch('/api/reels?available=true');
+            const reelsData = await reelsRes.json();
+            if (reelsData.success) {
+              setAvailableReels(reelsData.data || []);
             }
-          };
-          
-          setFormData({
-            gsm: lastItem.gsm?.toString() || '',
-            sale_bill_number: lastItem.sale_bill_number || '',
-            size: lastItem.size || '',
-            rate: lastItem.rate?.toString() || '',
-            bf: lastItem.bf?.toString() || '',
-            weight: lastItem.weight?.toString() || '',
-            shade: lastItem.shade || '',
-            bought_from_mill: lastItem.bought_from_mill || '',
-            sold_to: lastItem.sold_to || '',
-            purchase_bill_number: lastItem.purchase_bill_number || '',
-            sale_bill_date: formatDateForInput(lastItem.sale_bill_date),
-            purchase_bill_date: formatDateForInput(lastItem.purchase_bill_date),
-          });
+          } catch (error) {
+            console.error('Error loading available reels:', error);
+          } finally {
+            setIsLoadingReels(false);
+          }
         }
       } catch (error) {
-        // Silently fail - it's okay if we can't load defaults
-        console.error('Error loading last item:', error);
+        console.error('Error loading data:', error);
+      } finally {
+        isInitialMount.current = false;
       }
     };
 
-    loadLastItem();
+    loadData();
   }, []);
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  // Save mode to localStorage
+  useEffect(() => {
+    if (!isInitialMount.current && shouldSave.current) {
+      saveToLocalStorage(STORAGE_KEYS.FORM_MODE, mode);
+    }
+  }, [mode]);
+
+  // Save purchase form data to localStorage
+  useEffect(() => {
+    if (!isInitialMount.current && shouldSave.current) {
+      saveToLocalStorage(STORAGE_KEYS.PURCHASE_FORM, {
+        purchaseData,
+        purchaseReels,
+      });
+    }
+  }, [purchaseData, purchaseReels]);
+
+  // Save sale form data to localStorage
+  useEffect(() => {
+    if (!isInitialMount.current && shouldSave.current) {
+      saveToLocalStorage(STORAGE_KEYS.SALE_FORM, {
+        saleData,
+        selectedReels,
+      });
+    }
+  }, [saleData, selectedReels]);
+
+  // Restore form data when switching modes (if form appears empty)
+  useEffect(() => {
+    // Skip on initial mount (handled by initial load effect)
+    if (isInitialMount.current) return;
+
+    if (mode === 'purchase') {
+      // Check if purchase form is empty and data exists in localStorage
+      if (isPurchaseFormEmpty(purchaseData, purchaseReels)) {
+        const savedPurchaseData = loadFromLocalStorage<{
+          purchaseData: typeof purchaseData;
+          purchaseReels: typeof purchaseReels;
+        }>(STORAGE_KEYS.PURCHASE_FORM);
+
+        if (savedPurchaseData) {
+          shouldSave.current = false;
+          setPurchaseData(savedPurchaseData.purchaseData);
+          setPurchaseReels(savedPurchaseData.purchaseReels.length > 0 
+            ? savedPurchaseData.purchaseReels 
+            : [{ reel_number: '', gsm: '', size: '', size_unit: '', bf: '', weight: '', shade: '' }]);
+          shouldSave.current = true;
+        }
+      }
+    } else if (mode === 'sale') {
+      // Check if sale form is empty and data exists in localStorage
+      if (isSaleFormEmpty(saleData, selectedReels)) {
+        const savedSaleData = loadFromLocalStorage<{
+          saleData: typeof saleData;
+          selectedReels: typeof selectedReels;
+        }>(STORAGE_KEYS.SALE_FORM);
+
+        if (savedSaleData) {
+          shouldSave.current = false;
+          setSaleData(savedSaleData.saleData);
+          setSelectedReels(savedSaleData.selectedReels || []);
+          shouldSave.current = true;
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, isPurchaseFormEmpty, isSaleFormEmpty]);
+
+  // Reload available reels when mode changes to sale
+  useEffect(() => {
+    if (mode === 'sale') {
+      const loadAvailableReels = async () => {
+        try {
+          setIsLoadingReels(true);
+          const reelsRes = await fetch('/api/reels?available=true');
+          const reelsData = await reelsRes.json();
+          if (reelsData.success) {
+            setAvailableReels(reelsData.data || []);
+            // Only clear selected reels if we're not restoring from localStorage
+            // Use functional update to check current state value
+            if (!shouldSave.current) {
+              shouldSave.current = true;
+            } else {
+              // Check current selectedReels state - if empty, clear (user manually switched)
+              // If it has values, preserve them (they were restored from localStorage)
+              setSelectedReels(currentSelectedReels => {
+                // Only clear if currently empty (user manually switched to sale mode)
+                // If it has values, they were restored, so preserve them
+                return currentSelectedReels.length === 0 ? [] : currentSelectedReels;
+              });
+            }
+          }
+        } catch (error) {
+          console.error('Error loading available reels:', error);
+        } finally {
+          setIsLoadingReels(false);
+        }
+      };
+      loadAvailableReels();
+    } else {
+      // Reset loading state when switching away from sale mode
+      setIsLoadingReels(false);
+    }
+  }, [mode]);
+
+  const handlePurchaseSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError(null);
     setSuccess(false);
 
     try {
-      const response = await fetch('/api/items', {
+      const reels = purchaseReels.map(reel => ({
+        reel_number: reel.reel_number,
+        gsm: parseInt(reel.gsm),
+        size: reel.size,
+        size_unit: reel.size_unit,
+        bf: parseFloat(reel.bf),
+        weight: parseFloat(reel.weight),
+        shade: reel.shade,
+      }));
+
+      const response = await fetch('/api/purchases', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          gsm: parseInt(formData.gsm),
-          sale_bill_number: formData.sale_bill_number,
-          size: formData.size,
-          rate: parseFloat(formData.rate),
-          bf: parseFloat(formData.bf),
-          weight: parseFloat(formData.weight),
-          shade: formData.shade,
-          bought_from_mill: formData.bought_from_mill || null,
-          sold_to: formData.sold_to,
-          purchase_bill_number: formData.purchase_bill_number || null,
-          sale_bill_date: formData.sale_bill_date || null,
-          purchase_bill_date: formData.purchase_bill_date || null,
+          purchase_bill_number: purchaseData.purchase_bill_number,
+          purchase_bill_date: purchaseData.purchase_bill_date,
+          bought_from_mill: purchaseData.bought_from_mill,
+          reels,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to add item');
+        throw new Error(data.error || 'Failed to create purchase');
       }
 
       setSuccess(true);
       
-      // Populate form with the last inserted item's values
-      const insertedItem = data.data;
-      if (insertedItem) {
-        // Format dates for HTML date input (YYYY-MM-DD)
-        const formatDateForInput = (dateString: string | null | undefined): string => {
-          if (!dateString) return '';
-          try {
-            const date = new Date(dateString);
-            if (isNaN(date.getTime())) return '';
-            return date.toISOString().split('T')[0];
-          } catch {
-            return '';
-          }
-        };
-        
-        setFormData({
-          gsm: insertedItem.gsm?.toString() || '',
-          sale_bill_number: insertedItem.sale_bill_number || '',
-          size: insertedItem.size || '',
-          rate: insertedItem.rate?.toString() || '',
-          bf: insertedItem.bf?.toString() || '',
-          weight: insertedItem.weight?.toString() || '',
-          shade: insertedItem.shade || '',
-          bought_from_mill: insertedItem.bought_from_mill || '',
-          sold_to: insertedItem.sold_to || '',
-          purchase_bill_number: insertedItem.purchase_bill_number || '',
-          sale_bill_date: formatDateForInput(insertedItem.sale_bill_date),
-          purchase_bill_date: formatDateForInput(insertedItem.purchase_bill_date),
-        });
-      }
+      // Clear localStorage after successful submission
+      clearLocalStorage([STORAGE_KEYS.PURCHASE_FORM]);
       
-      // Refresh autocomplete options immediately after item is added
-      // This ensures newly added values appear in the dropdowns
-      setRefreshKey((prev) => prev + 1);
-      
-      // Also trigger a refresh after a short delay to ensure database is updated
-      setTimeout(() => {
-        setRefreshKey((prev) => prev + 1);
-      }, 300);
+      // Reset form
+      setPurchaseData({
+        purchase_bill_number: '',
+        purchase_bill_date: '',
+        bought_from_mill: '',
+      });
+      setPurchaseReels([{
+        reel_number: '',
+        gsm: '',
+        size: '',
+        size_unit: '',
+        bf: '',
+        weight: '',
+        shade: '',
+      }]);
       
       onItemAdded();
-
-      // Clear success message after 3 seconds
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -176,227 +377,621 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     }
   };
 
+  const handleSaleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+    setSuccess(false);
+
+    try {
+      if (selectedReels.length === 0) {
+        throw new Error('Please select at least one reel');
+      }
+
+      const reels = selectedReels.map(reel => ({
+        reel_id: reel.reel_id,
+        rate: parseFloat(reel.rate),
+      }));
+
+      const response = await fetch('/api/sales', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sale_bill_number: saleData.sale_bill_number,
+          sale_bill_date: saleData.sale_bill_date,
+          sold_to: saleData.sold_to,
+          reels,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to create sale');
+      }
+
+      setSuccess(true);
+      
+      // Clear localStorage after successful submission
+      clearLocalStorage([STORAGE_KEYS.SALE_FORM]);
+      
+      // Reset form
+      setSaleData({
+        sale_bill_number: '',
+        sale_bill_date: '',
+        sold_to: '',
+      });
+      setSelectedReels([]);
+      
+      // Reload available reels
+      setIsLoadingReels(true);
+      try {
+        const reelsRes = await fetch('/api/reels?available=true');
+        const reelsData = await reelsRes.json();
+        if (reelsData.success) {
+          setAvailableReels(reelsData.data || []);
+        }
+      } catch (error) {
+        console.error('Error reloading available reels:', error);
+      } finally {
+        setIsLoadingReels(false);
+      }
+      
+      onItemAdded();
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const addPurchaseReel = () => {
+    const lastReel = purchaseReels[purchaseReels.length - 1];
+    const newReel = lastReel ? { ...lastReel } : {
+      reel_number: '',
+      gsm: '',
+      size: '',
+      size_unit: '',
+      bf: '',
+      weight: '',
+      shade: '',
+    };
+    setPurchaseReels([...purchaseReels, newReel]);
+  };
+
+  const removePurchaseReel = (index: number) => {
+    setPurchaseReels(purchaseReels.filter((_, i) => i !== index));
+  };
+
+  const updatePurchaseReel = (index: number, field: string, value: string) => {
+    const updated = [...purchaseReels];
+    updated[index] = { ...updated[index], [field]: value };
+    setPurchaseReels(updated);
+  };
+
+  const toggleReelSelection = (reelId: number) => {
+    const index = selectedReels.findIndex(r => r.reel_id === reelId);
+    if (index >= 0) {
+      setSelectedReels(selectedReels.filter(r => r.reel_id !== reelId));
+    } else {
+      setSelectedReels([...selectedReels, { reel_id: reelId, rate: '' }]);
+    }
+  };
+
+  const updateSelectedReelRate = (reelId: number, rate: string) => {
+    setSelectedReels(selectedReels.map(r => 
+      r.reel_id === reelId ? { ...r, rate } : r
+    ));
+  };
+
+  // Group reels by purchase date and purchase bill number
+  const groupReelsByDateAndBill = (reels: Reel[]) => {
+    const grouped: { [date: string]: { [billNumber: string]: Reel[] } } = {};
+    
+    for (const reel of reels) {
+      const date = reel.purchase_bill_date || '';
+      const billNumber = reel.purchase_bill_number || '';
+      
+      if (!grouped[date]) {
+        grouped[date] = {};
+      }
+      
+      if (!grouped[date][billNumber]) {
+        grouped[date][billNumber] = [];
+      }
+      
+      grouped[date][billNumber].push(reel);
+    }
+    
+    return grouped;
+  };
+
+  // Format date for display
+  const formatDateForDisplay = (dateString: string | null | undefined): string => {
+    if (!dateString) return 'Unknown Date';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    } catch {
+      return dateString;
+    }
+  };
+
+  const clearSavedData = () => {
+    if (mode === 'purchase') {
+      clearLocalStorage([STORAGE_KEYS.PURCHASE_FORM]);
+      setPurchaseData({
+        purchase_bill_number: '',
+        purchase_bill_date: '',
+        bought_from_mill: '',
+      });
+      setPurchaseReels([{
+        reel_number: '',
+        gsm: '',
+        size: '',
+        size_unit: '',
+        bf: '',
+        weight: '',
+        shade: '',
+      }]);
+    } else {
+      clearLocalStorage([STORAGE_KEYS.SALE_FORM]);
+      setSaleData({
+        sale_bill_number: '',
+        sale_bill_date: '',
+        sold_to: '',
+      });
+      setSelectedReels([]);
+    }
+  };
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      {/* Product Details Section */}
-      <div className="space-y-4">
-        <div className="border-b border-gray-200 pb-2">
-          <h3 className="text-lg font-semibold text-gray-900">Product Details</h3>
-          <p className="text-sm text-gray-500">Basic product information</p>
+    <div className="space-y-6">
+      {/* Mode Toggle */}
+      <div className="flex gap-4 items-center justify-between border-b border-gray-200 pb-4">
+        <div className="flex gap-4">
+          <button
+            type="button"
+            onClick={() => setMode('purchase')}
+            className={`px-4 py-2 rounded-md font-medium ${
+              mode === 'purchase'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Purchase Mode
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('sale')}
+            className={`px-4 py-2 rounded-md font-medium ${
+              mode === 'sale'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            Sale Mode
+          </button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label htmlFor="gsm" className="block text-sm font-medium text-gray-700 mb-1">
-              GSM
-            </label>
-            <input
-              type="number"
-              id="gsm"
-              required
-              value={formData.gsm}
-              onChange={(e) => setFormData({ ...formData, gsm: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Enter GSM"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="size" className="block text-sm font-medium text-gray-700 mb-1">
-              Size
-            </label>
-            <input
-              type="text"
-              id="size"
-              required
-              value={formData.size}
-              onChange={(e) => setFormData({ ...formData, size: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Enter Size"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="bf" className="block text-sm font-medium text-gray-700 mb-1">
-              BF (Bursting Factor)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              id="bf"
-              required
-              value={formData.bf}
-              onChange={(e) => setFormData({ ...formData, bf: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Enter BF"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="weight" className="block text-sm font-medium text-gray-700 mb-1">
-              Weight
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              id="weight"
-              required
-              value={formData.weight}
-              onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Enter Weight"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="rate" className="block text-sm font-medium text-gray-700 mb-1">
-              Rate
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              id="rate"
-              required
-              value={formData.rate}
-              onChange={(e) => setFormData({ ...formData, rate: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Enter Rate"
-            />
-          </div>
-
-          <div className="md:col-span-2">
-            <AutocompleteInput
-              label="Shade"
-              id="shade"
-              value={formData.shade}
-              onChange={(value) => setFormData({ ...formData, shade: value })}
-              optionsEndpoint="/api/items/options"
-              placeholder="Select or enter shade"
-              refreshKey={refreshKey}
-              required={true}
-            />
-          </div>
-        </div>
+        {(purchaseData.purchase_bill_number || purchaseReels.some(r => r.reel_number) || 
+          saleData.sale_bill_number || selectedReels.length > 0) && (
+          <button
+            type="button"
+            onClick={clearSavedData}
+            className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 underline"
+            title="Clear saved form data"
+          >
+            Clear Saved Data
+          </button>
+        )}
       </div>
 
-      {/* Sale Information Section */}
-      <div className="space-y-4">
-        <div className="border-b border-gray-200 pb-2">
-          <h3 className="text-lg font-semibold text-gray-900">Sale Information</h3>
-          <p className="text-sm text-gray-500">Details about the sale transaction</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label htmlFor="sale_bill_number" className="block text-sm font-medium text-gray-700 mb-1">
-              Sale Bill Number
-            </label>
-            <input
-              type="text"
-              id="sale_bill_number"
-              required
-              value={formData.sale_bill_number}
-              onChange={(e) => setFormData({ ...formData, sale_bill_number: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Enter Sale Bill Number"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="sale_bill_date" className="block text-sm font-medium text-gray-700 mb-1">
-              Sale Bill Date
-            </label>
-            <input
-              type="date"
-              id="sale_bill_date"
-              value={formData.sale_bill_date}
-              onChange={(e) => setFormData({ ...formData, sale_bill_date: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <AutocompleteInput
-              label="Sold To"
-              id="sold_to"
-              value={formData.sold_to}
-              onChange={(value) => setFormData({ ...formData, sold_to: value })}
-              optionsEndpoint="/api/items/options"
-              placeholder="Select or enter customer name"
-              refreshKey={refreshKey}
-              required={true}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Purchase Information Section */}
-      <div className="space-y-4">
-        <div className="border-b border-gray-200 pb-2">
-          <h3 className="text-lg font-semibold text-gray-900">Purchase Information</h3>
-          <p className="text-sm text-gray-500">Details about the purchase transaction (optional)</p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div>
-            <label htmlFor="purchase_bill_number" className="block text-sm font-medium text-gray-700 mb-1">
-              Purchase Bill Number
-            </label>
-            <input
-              type="text"
-              id="purchase_bill_number"
-              value={formData.purchase_bill_number}
-              onChange={(e) => setFormData({ ...formData, purchase_bill_number: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 placeholder:text-gray-400"
-              placeholder="Enter Purchase Bill Number"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="purchase_bill_date" className="block text-sm font-medium text-gray-700 mb-1">
-              Purchase Bill Date
-            </label>
-            <input
-              type="date"
-              id="purchase_bill_date"
-              value={formData.purchase_bill_date}
-              onChange={(e) => setFormData({ ...formData, purchase_bill_date: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-
-          <div>
-            <AutocompleteInput
-              label="Bought From Mill"
-              id="bought_from_mill"
-              value={formData.bought_from_mill}
-              onChange={(value) => setFormData({ ...formData, bought_from_mill: value })}
-              optionsEndpoint="/api/items/options"
-              placeholder="Select or enter mill name"
-              refreshKey={refreshKey}
-              required={false}
-            />
-          </div>
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
-          {error}
+      {dataRestored && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-md">
+          Your previous form data has been restored. You can continue where you left off.
         </div>
       )}
 
-      {success && (
-        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md">
-          Item added successfully!
-        </div>
-      )}
+      {mode === 'purchase' ? (
+        <form onSubmit={handlePurchaseSubmit} className="space-y-6">
+          {/* Purchase Information */}
+          <div className="space-y-4">
+            <div className="border-b border-gray-200 pb-2">
+              <h3 className="text-lg font-semibold text-gray-900">Purchase Information</h3>
+              <p className="text-sm text-gray-500">Details about the purchase transaction</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="purchase_bill_number" className="block text-sm font-medium text-gray-700 mb-1">
+                  Purchase Bill Number *
+                </label>
+                <input
+                  type="text"
+                  id="purchase_bill_number"
+                  required
+                  disabled={isSubmitting}
+                  value={purchaseData.purchase_bill_number}
+                  onChange={(e) => setPurchaseData({ ...purchaseData, purchase_bill_number: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="purchase_bill_date" className="block text-sm font-medium text-gray-700 mb-1">
+                  Purchase Bill Date *
+                </label>
+                <input
+                  type="date"
+                  id="purchase_bill_date"
+                  required
+                  disabled={isSubmitting}
+                  value={purchaseData.purchase_bill_date}
+                  onChange={(e) => setPurchaseData({ ...purchaseData, purchase_bill_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="bought_from_mill" className="block text-sm font-medium text-gray-700 mb-1">
+                  Bought From Mill *
+                </label>
+                <select
+                  id="bought_from_mill"
+                  required
+                  disabled={isSubmitting}
+                  value={purchaseData.bought_from_mill}
+                  onChange={(e) => setPurchaseData({ ...purchaseData, bought_from_mill: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                >
+                  <option value="">Select Mill</option>
+                  {boughtFromMillOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-full md:w-auto px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {isSubmitting ? 'Adding...' : 'Add Item'}
-      </button>
-    </form>
+          {/* Reels Section */}
+          <div className="space-y-4">
+            <div className="flex justify-between items-center border-b border-gray-200 pb-2">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Reels</h3>
+                <p className="text-sm text-gray-500">Add reels for this purchase</p>
+              </div>
+              <button
+                type="button"
+                onClick={addPurchaseReel}
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                + Add Reel
+              </button>
+            </div>
+            {purchaseReels.map((reel, index) => (
+              <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-medium text-gray-900">Reel {index + 1}</h4>
+                  {purchaseReels.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removePurchaseReel(index)}
+                      disabled={isSubmitting}
+                      className="text-red-600 hover:text-red-800 text-sm"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reel Number *</label>
+                    <input
+                      type="text"
+                      required
+                      disabled={isSubmitting}
+                      value={reel.reel_number}
+                      onChange={(e) => updatePurchaseReel(index, 'reel_number', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">GSM *</label>
+                    <input
+                      type="number"
+                      required
+                      disabled={isSubmitting}
+                      value={reel.gsm}
+                      onChange={(e) => updatePurchaseReel(index, 'gsm', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Size *</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        disabled={isSubmitting}
+                        value={reel.size}
+                        onChange={(e) => updatePurchaseReel(index, 'size', e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                      />
+                      <select
+                        required
+                        disabled={isSubmitting}
+                        value={reel.size_unit}
+                        onChange={(e) => updatePurchaseReel(index, 'size_unit', e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                      >
+                        <option value="">Unit</option>
+                        <option value="mm">mm</option>
+                        <option value="cm">cm</option>
+                        <option value="inch">inch</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">BF *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      disabled={isSubmitting}
+                      value={reel.bf}
+                      onChange={(e) => updatePurchaseReel(index, 'bf', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Weight *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      disabled={isSubmitting}
+                      value={reel.weight}
+                      onChange={(e) => updatePurchaseReel(index, 'weight', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Shade *</label>
+                    <select
+                      required
+                      disabled={isSubmitting}
+                      value={reel.shade}
+                      onChange={(e) => updatePurchaseReel(index, 'shade', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    >
+                      <option value="">Select Shade</option>
+                      {shadeOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md">
+              Purchase created successfully!
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full md:w-auto px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? 'Creating...' : 'Create Purchase'}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={handleSaleSubmit} className="space-y-6">
+          {/* Sale Information */}
+          <div className="space-y-4">
+            <div className="border-b border-gray-200 pb-2">
+              <h3 className="text-lg font-semibold text-gray-900">Sale Information</h3>
+              <p className="text-sm text-gray-500">Details about the sale transaction</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="sale_bill_number" className="block text-sm font-medium text-gray-700 mb-1">
+                  Sale Bill Number *
+                </label>
+                <input
+                  type="text"
+                  id="sale_bill_number"
+                  required
+                  disabled={isSubmitting}
+                  value={saleData.sale_bill_number}
+                  onChange={(e) => setSaleData({ ...saleData, sale_bill_number: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="sale_bill_date" className="block text-sm font-medium text-gray-700 mb-1">
+                  Sale Bill Date *
+                </label>
+                <input
+                  type="date"
+                  id="sale_bill_date"
+                  required
+                  disabled={isSubmitting}
+                  value={saleData.sale_bill_date}
+                  onChange={(e) => setSaleData({ ...saleData, sale_bill_date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                />
+              </div>
+              <div>
+                <label htmlFor="sold_to" className="block text-sm font-medium text-gray-700 mb-1">
+                  Sold To *
+                </label>
+                <select
+                  id="sold_to"
+                  required
+                  disabled={isSubmitting}
+                  value={saleData.sold_to}
+                  onChange={(e) => setSaleData({ ...saleData, sold_to: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                >
+                  <option value="">Select Customer</option>
+                  {soldToOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Available Reels Selection */}
+          <div className="space-y-4">
+            <div className="border-b border-gray-200 pb-2">
+              <h3 className="text-lg font-semibold text-gray-900">Select Reels</h3>
+              <p className="text-sm text-gray-500">Choose reels from available inventory and set rates</p>
+            </div>
+            {isLoadingReels ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <p className="text-sm text-gray-600">Loading available reels...</p>
+                </div>
+              </div>
+            ) : availableReels.length === 0 ? (
+              <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 px-4 py-3 rounded-md">
+                No available reels in inventory. Please create a purchase first.
+              </div>
+            ) : (
+              <div className="space-y-4 max-h-96 overflow-y-auto border border-gray-200 rounded-lg p-4">
+                {Object.entries(groupReelsByDateAndBill(availableReels))
+                  .sort(([dateA], [dateB]) => {
+                    // Sort dates descending (newest first)
+                    return new Date(dateB).getTime() - new Date(dateA).getTime();
+                  })
+                  .map(([date, billGroups]) => (
+                    <div key={date} className="space-y-3">
+                      {/* Date Header */}
+                      <div className="sticky top-0 bg-gray-50 border-b-2 border-gray-300 pb-2 -mt-2 pt-2 z-10">
+                        <h4 className="text-base font-semibold text-gray-900">
+                          {formatDateForDisplay(date)}
+                        </h4>
+                      </div>
+                      
+                      {/* Bill Number Groups */}
+                      {Object.entries(billGroups).map(([billNumber, reels]) => (
+                        <div key={`${date}-${billNumber}`} className="space-y-2 ml-4">
+                          {/* Purchase Bill Number Header */}
+                          <div className="bg-gray-100 border-l-4 border-blue-500 pl-3 py-2 rounded">
+                            <h5 className="text-sm font-medium text-gray-800">
+                              Purchase Bill: {billNumber || 'N/A'}
+                            </h5>
+                          </div>
+                          
+                          {/* Reels in this bill */}
+                          <div className="space-y-2">
+                            {reels.map((reel) => {
+                              const isSelected = selectedReels.some(r => r.reel_id === reel.id);
+                              return (
+                                <div
+                                  key={reel.id}
+                                  className={`border rounded-lg p-4 ${
+                                    isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
+                                  }`}
+                                >
+                                  <div className="flex items-start gap-4">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => toggleReelSelection(reel.id)}
+                                      disabled={isSubmitting}
+                                      className="mt-1"
+                                    />
+                                    <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Reel Number:</span>
+                                        <p className="text-sm text-gray-900">{reel.reel_number}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">GSM:</span>
+                                        <p className="text-sm text-gray-900">{reel.gsm}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Size:</span>
+                                        <p className="text-sm text-gray-900">{reel.size} {reel.size_unit}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-sm font-medium text-gray-700">Shade:</span>
+                                        <p className="text-sm text-gray-900">{reel.shade}</p>
+                                      </div>
+                                    </div>
+                                    {isSelected && (
+                                      <div className="w-32">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
+                                        <input
+                                          type="number"
+                                          step="0.01"
+                                          required
+                                          disabled={isSubmitting}
+                                          value={selectedReels.find(r => r.reel_id === reel.id)?.rate || ''}
+                                          onChange={(e) => updateSelectedReelRate(reel.id, e.target.value)}
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-md">
+              Sale created successfully!
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isSubmitting || selectedReels.length === 0}
+            className="w-full md:w-auto px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSubmitting ? 'Creating...' : 'Create Sale'}
+          </button>
+        </form>
+      )}
+    </div>
   );
 }
-

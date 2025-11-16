@@ -1,38 +1,28 @@
 import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-// GET - Fetch paginated reels with joined purchase and sale data
+// GET - Fetch all reels for a specific date (based on purchase or sale date)
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
+    const date = searchParams.get('date');
 
-    if (page < 1) {
+    if (!date) {
       return NextResponse.json(
-        { success: false, error: 'Page must be greater than 0' },
+        { success: false, error: 'Date parameter is required' },
         { status: 400 }
       );
     }
 
-    if (limit < 1 || limit > 100) {
-      return NextResponse.json(
-        { success: false, error: 'Limit must be between 1 and 100' },
-        { status: 400 }
-      );
-    }
+    // Parse the date and create date range (start and end of day)
+    const selectedDate = new Date(date);
+    const startOfDay = new Date(selectedDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(selectedDate);
+    endOfDay.setHours(23, 59, 59, 999);
 
-    const offset = (page - 1) * limit;
-
-    // Get total count
-    const countResult = await sql`
-      SELECT COUNT(*) as total
-      FROM reels
-    `;
-    const total = parseInt(countResult[0].total.toString());
-    const totalPages = Math.ceil(total / limit);
-
-    // Get paginated reels with joined purchase and sale data
+    // Get all reels where purchase_date or sale_date matches the selected date
     const items = await sql`
       SELECT 
         r.id,
@@ -54,25 +44,21 @@ export async function GET(request: Request) {
       FROM reels r
       INNER JOIN purchases p ON p.id = r.purchase_id
       LEFT JOIN sales s ON s.id = r.sale_id
+      WHERE (p.purchase_bill_date >= ${startOfDay.toISOString().split('T')[0]} 
+             AND p.purchase_bill_date <= ${endOfDay.toISOString().split('T')[0]})
+         OR (s.sale_bill_date >= ${startOfDay.toISOString().split('T')[0]} 
+             AND s.sale_bill_date <= ${endOfDay.toISOString().split('T')[0]})
       ORDER BY r.created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
     `;
 
     return NextResponse.json({
       success: true,
       data: items,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
-        hasNext: page < totalPages,
-        hasPrev: page > 1,
-      },
+      date: date,
+      count: items.length,
     });
   } catch (error) {
-    console.error('Error fetching paginated items:', error);
+    console.error('Error fetching items by date:', error);
     return NextResponse.json(
       {
         success: false,

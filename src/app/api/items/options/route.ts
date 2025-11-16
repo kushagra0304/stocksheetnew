@@ -1,7 +1,11 @@
-import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-// GET - Fetch existing options for shade, bought_from_mill, and sold_to
+// Hardcoded ENUM values from database schema
+const SHADE_OPTIONS = ['18 GY', '18 NS'] as const;
+const SOLD_TO_OPTIONS = ['Ganpati Graphics'] as const;
+const BOUGHT_FROM_MILL_OPTIONS = ['Deoria Paper Mills Ltd.', 'Ramaa Shyama Papers Pvt. Ltd.'] as const;
+
+// GET - Fetch ENUM options for shade, bought_from_mill, and sold_to
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -14,34 +18,17 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get distinct, non-null values for the specified field
-    let result;
+    // Return hardcoded ENUM values
+    let options: readonly string[];
     if (field === 'shade') {
-      result = await sql`
-        SELECT DISTINCT shade as value
-        FROM items
-        WHERE shade IS NOT NULL
-        ORDER BY shade ASC
-      `;
+      options = SHADE_OPTIONS;
     } else if (field === 'bought_from_mill') {
-      result = await sql`
-        SELECT DISTINCT bought_from_mill as value
-        FROM items
-        WHERE bought_from_mill IS NOT NULL
-        ORDER BY bought_from_mill ASC
-      `;
+      options = BOUGHT_FROM_MILL_OPTIONS;
     } else {
-      result = await sql`
-        SELECT DISTINCT sold_to as value
-        FROM items
-        WHERE sold_to IS NOT NULL
-        ORDER BY sold_to ASC
-      `;
+      options = SOLD_TO_OPTIONS;
     }
 
-    const options = result.map((row: any) => row.value).filter(Boolean);
-
-    return NextResponse.json({ success: true, data: options });
+    return NextResponse.json({ success: true, data: [...options] });
   } catch (error) {
     console.error('Error fetching options:', error);
     return NextResponse.json(
