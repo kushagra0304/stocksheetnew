@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 
 // Hardcoded ENUM values from database schema
-const SHADE_OPTIONS = ['18 GY', '18 NS'] as const;
+const SHADE_OPTIONS = ['GY', 'NS'] as const;
 const SOLD_TO_OPTIONS = ['Ganpati Graphics'] as const;
-const BOUGHT_FROM_MILL_OPTIONS = ['Deoria Paper Mills Ltd.', 'Ramaa Shyama Papers Pvt. Ltd.'] as const;
+const BOUGHT_FROM_MILL_OPTIONS = ['Deoria Paper Mills Ltd.', 'Ramaa Shyama Papers Pvt. Ltd.', 'Devrishi papers pvt. ltd.'] as const;
 
 // GET - Fetch ENUM options for shade, bought_from_mill, and sold_to
 export async function GET(request: Request) {

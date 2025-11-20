@@ -2,7 +2,7 @@ import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
 // Hardcoded ENUM values for validation
-const BOUGHT_FROM_MILL_OPTIONS = ['Deoria Paper Mills Ltd.', 'Ramaa Shyama Papers Pvt. Ltd.'] as const;
+const BOUGHT_FROM_MILL_OPTIONS = ['Deoria Paper Mills Ltd.', 'Ramaa Shyama Papers Pvt. Ltd.', 'Devrishi papers pvt. ltd.'] as const;
 
 // GET - List purchases with their reels
 export async function GET() {
