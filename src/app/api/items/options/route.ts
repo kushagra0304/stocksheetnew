@@ -4,6 +4,12 @@ import { NextResponse } from 'next/server';
 // Hardcoded ENUM values from database schema
 const SHADE_OPTIONS = ['GY', 'NS'] as const;
 
+// Interface for company query result
+interface CompanyResult {
+  id: number;
+  name: string;
+}
+
 // GET - Fetch ENUM options for shade, bought_from_mill, and sold_to
 export async function GET(request: Request) {
   try {
@@ -23,7 +29,7 @@ export async function GET(request: Request) {
     }
 
     // Query company table for bought_from_mill (mills) or sold_to (customers)
-    let companies;
+    let companies: CompanyResult[];
     if (field === 'bought_from_mill') {
       companies = await sql`
         SELECT id, name
@@ -42,7 +48,7 @@ export async function GET(request: Request) {
     }
 
     // Return array of company names (for backward compatibility with existing frontend)
-    const options = companies.map((c: { name: string }) => c.name);
+    const options = companies.map(c => c.name);
 
     return NextResponse.json({ success: true, data: options });
   } catch (error) {
