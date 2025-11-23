@@ -1,9 +1,8 @@
+import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
 // Hardcoded ENUM values from database schema
 const SHADE_OPTIONS = ['GY', 'NS'] as const;
-const SOLD_TO_OPTIONS = ['Ganpati Graphics'] as const;
-const BOUGHT_FROM_MILL_OPTIONS = ['Deoria Paper Mills Ltd.', 'Ramaa Shyama Papers Pvt. Ltd.', 'Devrishi papers pvt. ltd.'] as const;
 
 // GET - Fetch ENUM options for shade, bought_from_mill, and sold_to
 export async function GET(request: Request) {
@@ -18,17 +17,34 @@ export async function GET(request: Request) {
       );
     }
 
-    // Return hardcoded ENUM values
-    let options: readonly string[];
+    // Return hardcoded ENUM values for shade
     if (field === 'shade') {
-      options = SHADE_OPTIONS;
-    } else if (field === 'bought_from_mill') {
-      options = BOUGHT_FROM_MILL_OPTIONS;
-    } else {
-      options = SOLD_TO_OPTIONS;
+      return NextResponse.json({ success: true, data: [...SHADE_OPTIONS] });
     }
 
-    return NextResponse.json({ success: true, data: [...options] });
+    // Query company table for bought_from_mill (mills) or sold_to (customers)
+    let companies;
+    if (field === 'bought_from_mill') {
+      companies = await sql`
+        SELECT id, name
+        FROM company
+        WHERE type = 'mill'
+        ORDER BY name ASC
+      `;
+    } else {
+      // sold_to
+      companies = await sql`
+        SELECT id, name
+        FROM company
+        WHERE type = 'customer'
+        ORDER BY name ASC
+      `;
+    }
+
+    // Return array of company names (for backward compatibility with existing frontend)
+    const options = companies.map((c: { name: string }) => c.name);
+
+    return NextResponse.json({ success: true, data: options });
   } catch (error) {
     console.error('Error fetching options:', error);
     return NextResponse.json(

@@ -80,21 +80,27 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
   
   // ENUM options
   const [shadeOptions, setShadeOptions] = useState<string[]>([]);
-  const [soldToOptions, setSoldToOptions] = useState<string[]>([]);
-  const [boughtFromMillOptions, setBoughtFromMillOptions] = useState<string[]>([]);
+  
+  // Company options (with IDs)
+  interface CompanyOption {
+    id: number;
+    name: string;
+  }
+  const [millOptions, setMillOptions] = useState<CompanyOption[]>([]);
+  const [customerOptions, setCustomerOptions] = useState<CompanyOption[]>([]);
   
   // Purchase form data
   const [purchaseData, setPurchaseData] = useState({
     purchase_bill_number: '',
     purchase_bill_date: '',
-    bought_from_mill: '',
+    company_id: '',
   });
   
   // Sale form data
   const [saleData, setSaleData] = useState({
     sale_bill_number: '',
     sale_bill_date: '',
-    sold_to: '',
+    company_id: '',
   });
   
   // Reels for purchase mode (array of reel objects)
@@ -119,20 +125,20 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Load ENUM options
-        const [shadeRes, soldToRes, boughtFromMillRes] = await Promise.all([
+        // Load ENUM options and company options
+        const [shadeRes, millsRes, customersRes] = await Promise.all([
           fetch('/api/items/options?field=shade'),
-          fetch('/api/items/options?field=sold_to'),
-          fetch('/api/items/options?field=bought_from_mill'),
+          fetch('/api/companies?type=mill'),
+          fetch('/api/companies?type=customer'),
         ]);
         
         const shadeData = await shadeRes.json();
-        const soldToData = await soldToRes.json();
-        const boughtFromMillData = await boughtFromMillRes.json();
+        const millsData = await millsRes.json();
+        const customersData = await customersRes.json();
         
         if (shadeData.success) setShadeOptions(shadeData.data || []);
-        if (soldToData.success) setSoldToOptions(soldToData.data || []);
-        if (boughtFromMillData.success) setBoughtFromMillOptions(boughtFromMillData.data || []);
+        if (millsData.success) setMillOptions(millsData.data || []);
+        if (customersData.success) setCustomerOptions(customersData.data || []);
         
         // Restore form data from localStorage
         const savedMode = loadFromLocalStorage<FormMode>(STORAGE_KEYS.FORM_MODE);
@@ -318,6 +324,38 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     setSuccess(false);
 
     try {
+      // Check for duplicate reel numbers before submission
+      // Exception: Skip uniqueness validation for "Malay Enterprise"
+      const selectedCompanyId = parseInt(purchaseData.company_id);
+      const selectedCompany = millOptions.find(company => company.id === selectedCompanyId);
+      const companyName = (selectedCompany?.name || '').trim().toLowerCase();
+      const isMalayEnterprise = companyName === 'malay enterprise';
+      
+      if (!isMalayEnterprise) {
+        const reelNumbers = purchaseReels
+          .map(reel => (reel.reel_number || '').trim().toLowerCase())
+          .filter(num => num !== '');
+        const uniqueReelNumbers = new Set(reelNumbers);
+        
+        if (reelNumbers.length !== uniqueReelNumbers.size) {
+          // Find duplicates
+          const seen = new Set<string>();
+          const duplicates = new Set<string>();
+          
+          for (const num of reelNumbers) {
+            if (seen.has(num)) {
+              duplicates.add(num);
+            } else {
+              seen.add(num);
+            }
+          }
+          
+          setError('Duplicate reel numbers detected. Please ensure each reel has a unique reel number.');
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       const reels = purchaseReels.map(reel => ({
         reel_number: reel.reel_number,
         gsm: parseInt(reel.gsm),
@@ -336,7 +374,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         body: JSON.stringify({
           purchase_bill_number: purchaseData.purchase_bill_number,
           purchase_bill_date: purchaseData.purchase_bill_date,
-          bought_from_mill: purchaseData.bought_from_mill,
+          company_id: parseInt(purchaseData.company_id),
           reels,
         }),
       });
@@ -356,7 +394,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
       setPurchaseData({
         purchase_bill_number: '',
         purchase_bill_date: '',
-        bought_from_mill: '',
+        company_id: '',
       });
       setPurchaseReels([{
         reel_number: '',
@@ -401,7 +439,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         body: JSON.stringify({
           sale_bill_number: saleData.sale_bill_number,
           sale_bill_date: saleData.sale_bill_date,
-          sold_to: saleData.sold_to,
+          company_id: parseInt(saleData.company_id),
           reels,
         }),
       });
@@ -421,7 +459,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
       setSaleData({
         sale_bill_number: '',
         sale_bill_date: '',
-        sold_to: '',
+        company_id: '',
       });
       setSelectedReels([]);
       
@@ -530,7 +568,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
       setPurchaseData({
         purchase_bill_number: '',
         purchase_bill_date: '',
-        bought_from_mill: '',
+        company_id: '',
       });
       setPurchaseReels([{
         reel_number: '',
@@ -546,7 +584,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
       setSaleData({
         sale_bill_number: '',
         sale_bill_date: '',
-        sold_to: '',
+        company_id: '',
       });
       setSelectedReels([]);
     }
@@ -644,14 +682,14 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                   id="bought_from_mill"
                   required
                   disabled={isSubmitting}
-                  value={purchaseData.bought_from_mill}
-                  onChange={(e) => setPurchaseData({ ...purchaseData, bought_from_mill: e.target.value })}
+                  value={purchaseData.company_id}
+                  onChange={(e) => setPurchaseData({ ...purchaseData, company_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
                 >
                   <option value="">Select Mill</option>
-                  {boughtFromMillOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                  {millOptions.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
                     </option>
                   ))}
                 </select>
@@ -849,14 +887,14 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                   id="sold_to"
                   required
                   disabled={isSubmitting}
-                  value={saleData.sold_to}
-                  onChange={(e) => setSaleData({ ...saleData, sold_to: e.target.value })}
+                  value={saleData.company_id}
+                  onChange={(e) => setSaleData({ ...saleData, company_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
                 >
                   <option value="">Select Customer</option>
-                  {soldToOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
+                  {customerOptions.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
                     </option>
                   ))}
                 </select>

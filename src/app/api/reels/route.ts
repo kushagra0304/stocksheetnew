@@ -31,9 +31,10 @@ export async function GET(request: Request) {
             r.created_at,
             p.purchase_bill_number,
             p.purchase_bill_date,
-            p.bought_from_mill
+            c.name as bought_from_mill
           FROM reels r
           INNER JOIN purchases p ON p.id = r.purchase_id
+          INNER JOIN company c ON c.id = p.company_id
           WHERE r.sale_id IS NULL AND r.purchase_id = ${parseInt(purchaseId)}
           ORDER BY p.purchase_bill_date DESC
         `;
@@ -54,9 +55,10 @@ export async function GET(request: Request) {
             r.created_at,
             p.purchase_bill_number,
             p.purchase_bill_date,
-            p.bought_from_mill
+            c.name as bought_from_mill
           FROM reels r
           INNER JOIN purchases p ON p.id = r.purchase_id
+          INNER JOIN company c ON c.id = p.company_id
           WHERE r.sale_id IS NULL
           ORDER BY p.purchase_bill_date DESC
         `;
@@ -78,9 +80,10 @@ export async function GET(request: Request) {
           r.created_at,
           p.purchase_bill_number,
           p.purchase_bill_date,
-          p.bought_from_mill
+          c.name as bought_from_mill
         FROM reels r
         INNER JOIN purchases p ON p.id = r.purchase_id
+        INNER JOIN company c ON c.id = p.company_id
         WHERE r.purchase_id = ${parseInt(purchaseId)} AND r.sale_id = ${parseInt(saleId)}
         ORDER BY r.created_at DESC
       `;
@@ -101,9 +104,10 @@ export async function GET(request: Request) {
           r.created_at,
           p.purchase_bill_number,
           p.purchase_bill_date,
-          p.bought_from_mill
+          c.name as bought_from_mill
         FROM reels r
         INNER JOIN purchases p ON p.id = r.purchase_id
+        INNER JOIN company c ON c.id = p.company_id
         WHERE r.purchase_id = ${parseInt(purchaseId)}
         ORDER BY r.created_at DESC
       `;
@@ -124,9 +128,10 @@ export async function GET(request: Request) {
           r.created_at,
           p.purchase_bill_number,
           p.purchase_bill_date,
-          p.bought_from_mill
+          c.name as bought_from_mill
         FROM reels r
         INNER JOIN purchases p ON p.id = r.purchase_id
+        INNER JOIN company c ON c.id = p.company_id
         WHERE r.sale_id = ${parseInt(saleId)}
         ORDER BY r.created_at DESC
       `;
@@ -147,9 +152,10 @@ export async function GET(request: Request) {
           r.created_at,
           p.purchase_bill_number,
           p.purchase_bill_date,
-          p.bought_from_mill
+          c.name as bought_from_mill
         FROM reels r
         INNER JOIN purchases p ON p.id = r.purchase_id
+        INNER JOIN company c ON c.id = p.company_id
         ORDER BY r.created_at DESC
       `;
     }

@@ -1,9 +1,6 @@
 import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-// Hardcoded ENUM values for validation
-const SOLD_TO_OPTIONS = ['Ganpati Graphics'] as const;
-
 // GET - List sales with their reels
 export async function GET() {
   try {
@@ -12,7 +9,8 @@ export async function GET() {
         s.id,
         s.sale_bill_number,
         s.sale_bill_date,
-        s.sold_to,
+        s.company_id,
+        c.name as sold_to,
         s.created_at,
         COALESCE(
           json_agg(
@@ -33,8 +31,9 @@ export async function GET() {
           '[]'::json
         ) as reels
       FROM sales s
+      INNER JOIN company c ON c.id = s.company_id
       LEFT JOIN reels r ON r.sale_id = s.id
-      GROUP BY s.id, s.sale_bill_number, s.sale_bill_date, s.sold_to, s.created_at
+      GROUP BY s.id, s.sale_bill_number, s.sale_bill_date, s.company_id, c.name, s.created_at
       ORDER BY s.created_at DESC
     `;
     
@@ -55,20 +54,31 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { sale_bill_number, sale_bill_date, sold_to, reels } = body;
+    const { sale_bill_number, sale_bill_date, company_id, reels } = body;
 
     // Validate required fields
-    if (!sale_bill_number || !sale_bill_date || !sold_to) {
+    if (!sale_bill_number || !sale_bill_date || !company_id) {
       return NextResponse.json(
-        { success: false, error: 'Sale Bill Number, Sale Bill Date, and Sold To are required' },
+        { success: false, error: 'Sale Bill Number, Sale Bill Date, and Company are required' },
         { status: 400 }
       );
     }
 
-    // Validate ENUM value
-    if (!SOLD_TO_OPTIONS.includes(sold_to as any)) {
+    // Validate company_id exists and is a customer
+    const company = await sql`
+      SELECT id, name, type FROM company WHERE id = ${company_id}
+    `;
+
+    if (company.length === 0) {
       return NextResponse.json(
-        { success: false, error: `Invalid sold_to value. Must be one of: ${SOLD_TO_OPTIONS.join(', ')}` },
+        { success: false, error: 'Company not found' },
+        { status: 400 }
+      );
+    }
+
+    if (company[0].type !== 'customer') {
+      return NextResponse.json(
+        { success: false, error: 'Selected company must be a customer' },
         { status: 400 }
       );
     }
@@ -115,9 +125,9 @@ export async function POST(request: Request) {
 
     // Create sale
     const sale = await sql`
-      INSERT INTO sales (sale_bill_number, sale_bill_date, sold_to)
-      VALUES (${sale_bill_number}, ${sale_bill_date}, ${sold_to})
-      RETURNING id, sale_bill_number, sale_bill_date, sold_to, created_at
+      INSERT INTO sales (sale_bill_number, sale_bill_date, company_id)
+      VALUES (${sale_bill_number}, ${sale_bill_date}, ${company_id})
+      RETURNING id, sale_bill_number, sale_bill_date, company_id, created_at
     `;
 
     const saleId = sale[0].id;
@@ -136,10 +146,16 @@ export async function POST(request: Request) {
       }
     }
 
+    // Return sale with company name for backward compatibility
+    const saleWithCompany = {
+      ...sale[0],
+      sold_to: company[0].name,
+    };
+
     return NextResponse.json({
       success: true,
       data: {
-        sale: sale[0],
+        sale: saleWithCompany,
         reels: updatedReels,
       },
       message: 'Sale created and reels assigned successfully',

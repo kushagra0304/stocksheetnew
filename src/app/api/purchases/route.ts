@@ -1,9 +1,6 @@
 import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-// Hardcoded ENUM values for validation
-const BOUGHT_FROM_MILL_OPTIONS = ['Deoria Paper Mills Ltd.', 'Ramaa Shyama Papers Pvt. Ltd.', 'Devrishi papers pvt. ltd.'] as const;
-
 // GET - List purchases with their reels
 export async function GET() {
   try {
@@ -12,7 +9,8 @@ export async function GET() {
         p.id,
         p.purchase_bill_number,
         p.purchase_bill_date,
-        p.bought_from_mill,
+        p.company_id,
+        c.name as bought_from_mill,
         p.created_at,
         COALESCE(
           json_agg(
@@ -33,8 +31,9 @@ export async function GET() {
           '[]'::json
         ) as reels
       FROM purchases p
+      INNER JOIN company c ON c.id = p.company_id
       LEFT JOIN reels r ON r.purchase_id = p.id
-      GROUP BY p.id, p.purchase_bill_number, p.purchase_bill_date, p.bought_from_mill, p.created_at
+      GROUP BY p.id, p.purchase_bill_number, p.purchase_bill_date, p.company_id, c.name, p.created_at
       ORDER BY p.created_at DESC
     `;
     
@@ -55,20 +54,31 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { purchase_bill_number, purchase_bill_date, bought_from_mill, reels } = body;
+    const { purchase_bill_number, purchase_bill_date, company_id, reels } = body;
 
     // Validate required fields
-    if (!purchase_bill_number || !purchase_bill_date || !bought_from_mill) {
+    if (!purchase_bill_number || !purchase_bill_date || !company_id) {
       return NextResponse.json(
-        { success: false, error: 'Purchase Bill Number, Purchase Bill Date, and Bought From Mill are required' },
+        { success: false, error: 'Purchase Bill Number, Purchase Bill Date, and Company are required' },
         { status: 400 }
       );
     }
 
-    // Validate ENUM value
-    if (!BOUGHT_FROM_MILL_OPTIONS.includes(bought_from_mill as typeof BOUGHT_FROM_MILL_OPTIONS[number])) {
+    // Validate company_id exists and is a mill
+    const company = await sql`
+      SELECT id, name, type FROM company WHERE id = ${company_id}
+    `;
+
+    if (company.length === 0) {
       return NextResponse.json(
-        { success: false, error: `Invalid bought_from_mill value. Must be one of: ${BOUGHT_FROM_MILL_OPTIONS.join(', ')}` },
+        { success: false, error: 'Company not found' },
+        { status: 400 }
+      );
+    }
+
+    if (company[0].type !== 'mill') {
+      return NextResponse.json(
+        { success: false, error: 'Selected company must be a mill' },
         { status: 400 }
       );
     }
@@ -92,11 +102,44 @@ export async function POST(request: Request) {
       }
     }
 
+    // Check for duplicate reel numbers within this purchase
+    // Exception: Skip uniqueness validation for "Malay Enterprise"
+    const companyName = (company[0].name || '').trim().toLowerCase();
+    const isMalayEnterprise = companyName === 'malay enterprise';
+    
+    if (!isMalayEnterprise) {
+      const reelNumbers = reels.map(reel => (reel.reel_number || '').trim().toLowerCase()).filter(num => num !== '');
+      const uniqueReelNumbers = new Set(reelNumbers);
+      
+      if (reelNumbers.length !== uniqueReelNumbers.size) {
+        // Find duplicates
+        const seen = new Set<string>();
+        const duplicates = new Set<string>();
+        
+        for (const num of reelNumbers) {
+          if (seen.has(num)) {
+            duplicates.add(num);
+          } else {
+            seen.add(num);
+          }
+        }
+        
+        const duplicateList = Array.from(duplicates).join(', ');
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: `Duplicate reel numbers found: ${duplicateList}. Each reel number must be unique within a purchase.` 
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create purchase and reels in a transaction
     const purchase = await sql`
-      INSERT INTO purchases (purchase_bill_number, purchase_bill_date, bought_from_mill)
-      VALUES (${purchase_bill_number}, ${purchase_bill_date}, ${bought_from_mill})
-      RETURNING id, purchase_bill_number, purchase_bill_date, bought_from_mill, created_at
+      INSERT INTO purchases (purchase_bill_number, purchase_bill_date, company_id)
+      VALUES (${purchase_bill_number}, ${purchase_bill_date}, ${company_id})
+      RETURNING id, purchase_bill_number, purchase_bill_date, company_id, created_at
     `;
 
     const purchaseId = purchase[0].id;
@@ -113,10 +156,16 @@ export async function POST(request: Request) {
       insertedReels.push(result[0]);
     }
 
+    // Return purchase with company name for backward compatibility
+    const purchaseWithCompany = {
+      ...purchase[0],
+      bought_from_mill: company[0].name,
+    };
+
     return NextResponse.json({
       success: true,
       data: {
-        purchase: purchase[0],
+        purchase: purchaseWithCompany,
         reels: insertedReels,
       },
       message: 'Purchase and reels created successfully',

@@ -8,6 +8,7 @@ import {
   SignedOut,
   UserButton,
 } from "@clerk/nextjs";
+import Link from "next/link";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -40,6 +41,14 @@ export default function RootLayout({
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
               <h1 className="text-xl font-semibold text-gray-900">StockSheet</h1>
               <div className="flex items-center gap-4">
+                <SignedIn>
+                  <Link
+                    href="/settings"
+                    className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                  >
+                    Settings
+                  </Link>
+                </SignedIn>
                 <SignedOut>
                   <SignInButton mode="modal">
                     <button className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900">

@@ -37,13 +37,15 @@ export async function GET(request: Request) {
         r.created_at,
         p.purchase_bill_number,
         p.purchase_bill_date,
-        p.bought_from_mill,
+        c_p.name as bought_from_mill,
         s.sale_bill_number,
         s.sale_bill_date,
-        s.sold_to
+        c_s.name as sold_to
       FROM reels r
       INNER JOIN purchases p ON p.id = r.purchase_id
+      INNER JOIN company c_p ON c_p.id = p.company_id
       LEFT JOIN sales s ON s.id = r.sale_id
+      LEFT JOIN company c_s ON c_s.id = s.company_id
       WHERE (p.purchase_bill_date >= ${startOfDay.toISOString().split('T')[0]} 
              AND p.purchase_bill_date <= ${endOfDay.toISOString().split('T')[0]})
          OR (s.sale_bill_date >= ${startOfDay.toISOString().split('T')[0]} 
