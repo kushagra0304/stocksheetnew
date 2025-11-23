@@ -36,7 +36,7 @@ export async function GET(request: Request) {
         FROM company
         WHERE type = 'mill'
         ORDER BY name ASC
-      `;
+      ` as CompanyResult[];
     } else {
       // sold_to
       companies = await sql`
@@ -44,7 +44,7 @@ export async function GET(request: Request) {
         FROM company
         WHERE type = 'customer'
         ORDER BY name ASC
-      `;
+      ` as CompanyResult[];
     }
 
     // Return array of company names (for backward compatibility with existing frontend)
