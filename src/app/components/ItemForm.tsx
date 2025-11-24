@@ -463,7 +463,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
   };
 
   const addPurchaseReel = () => {
-    const lastReel = purchaseReels[purchaseReels.length - 1];
+    const lastReel = purchaseReels[0];
     const newReel = lastReel ? { ...lastReel } : {
       reel_number: '',
       gsm: '',
@@ -473,7 +473,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
       weight: '',
       shade: '',
     };
-    setPurchaseReels([...purchaseReels, newReel]);
+    setPurchaseReels([newReel, ...purchaseReels]);
   };
 
   const removePurchaseReel = (index: number) => {
@@ -703,7 +703,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
             {purchaseReels.map((reel, index) => (
               <div key={index} className="border border-gray-200 rounded-lg p-4 space-y-4">
                 <div className="flex justify-between items-center mb-2">
-                  <h4 className="font-medium text-gray-900">Reel {index + 1}</h4>
+                  <h4 className="font-medium text-gray-900">Reel {purchaseReels.length - index}</h4>
                   {purchaseReels.length > 1 && (
                     <button
                       type="button"
