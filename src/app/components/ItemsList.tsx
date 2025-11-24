@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 
 interface Item {
   id: number;
-  reel_number: string;
+  reel_number: string | null;
   gsm: number;
   size: string;
   size_unit?: string | null;

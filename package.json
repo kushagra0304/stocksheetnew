@@ -6,11 +6,14 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "schema:generate": "tsx scripts/generate-schema.ts",
+    "schema:watch": "tsx watch scripts/generate-schema.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^6.35.0",
     "@neondatabase/serverless": "^1.0.2",
+    "dotenv": "^17.2.3",
     "next": "16.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0"
@@ -23,6 +26,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.1",
     "tailwindcss": "^4",
+    "tsx": "^4.20.6",
     "typescript": "^5"
   }
 }

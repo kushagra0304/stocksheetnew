@@ -4,14 +4,14 @@ import { useState, FormEvent, useEffect, useRef, useCallback } from 'react';
 
 interface Reel {
   id: number;
-  reel_number: string;
+  reel_number: string | null;
   gsm: number;
   size: string;
   size_unit: string;
   bf: number;
   weight: number;
   shade: string;
-  rate: number;
+  rate: number | null;
   purchase_id?: number;
   sale_id?: number | null;
   purchase_bill_number?: string;
@@ -118,8 +118,8 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
   const [availableReels, setAvailableReels] = useState<Reel[]>([]);
   // Loading state for available reels
   const [isLoadingReels, setIsLoadingReels] = useState(false);
-  // Selected reels for sale (with rates)
-  const [selectedReels, setSelectedReels] = useState<{ reel_id: number; rate: string }[]>([]);
+  // Selected reels for sale (with rates and reel_number)
+  const [selectedReels, setSelectedReels] = useState<{ reel_id: number; rate: string; reel_number: string }[]>([]);
 
   // Load ENUM options and restore form data from localStorage
   useEffect(() => {
@@ -324,40 +324,8 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     setSuccess(false);
 
     try {
-      // Check for duplicate reel numbers before submission
-      // Exception: Skip uniqueness validation for "Malay Enterprise"
-      const selectedCompanyId = parseInt(purchaseData.company_id);
-      const selectedCompany = millOptions.find(company => company.id === selectedCompanyId);
-      const companyName = (selectedCompany?.name || '').trim().toLowerCase();
-      const isMalayEnterprise = companyName === 'malay enterprise';
-      
-      if (!isMalayEnterprise) {
-        const reelNumbers = purchaseReels
-          .map(reel => (reel.reel_number || '').trim().toLowerCase())
-          .filter(num => num !== '');
-        const uniqueReelNumbers = new Set(reelNumbers);
-        
-        if (reelNumbers.length !== uniqueReelNumbers.size) {
-          // Find duplicates
-          const seen = new Set<string>();
-          const duplicates = new Set<string>();
-          
-          for (const num of reelNumbers) {
-            if (seen.has(num)) {
-              duplicates.add(num);
-            } else {
-              seen.add(num);
-            }
-          }
-          
-          setError('Duplicate reel numbers detected. Please ensure each reel has a unique reel number.');
-          setIsSubmitting(false);
-          return;
-        }
-      }
-
       const reels = purchaseReels.map(reel => ({
-        reel_number: reel.reel_number,
+        reel_number: reel.reel_number.trim() || null,
         gsm: parseInt(reel.gsm),
         size: reel.size,
         size_unit: reel.size_unit,
@@ -426,9 +394,17 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         throw new Error('Please select at least one reel');
       }
 
+      // Validate that all selected reels have reel_number
+      for (const reel of selectedReels) {
+        if (!reel.reel_number || reel.reel_number.trim() === '') {
+          throw new Error('Reel number is required for all selected reels. Please enter a reel number for each reel.');
+        }
+      }
+
       const reels = selectedReels.map(reel => ({
         reel_id: reel.reel_id,
         rate: parseFloat(reel.rate),
+        reel_number: reel.reel_number.trim(),
       }));
 
       const response = await fetch('/api/sales', {
@@ -515,13 +491,24 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     if (index >= 0) {
       setSelectedReels(selectedReels.filter(r => r.reel_id !== reelId));
     } else {
-      setSelectedReels([...selectedReels, { reel_id: reelId, rate: '' }]);
+      const reel = availableReels.find(r => r.id === reelId);
+      setSelectedReels([...selectedReels, { 
+        reel_id: reelId, 
+        rate: '',
+        reel_number: (reel?.reel_number && reel.reel_number.trim() !== '') ? reel.reel_number : ''
+      }]);
     }
   };
 
   const updateSelectedReelRate = (reelId: number, rate: string) => {
     setSelectedReels(selectedReels.map(r => 
       r.reel_id === reelId ? { ...r, rate } : r
+    ));
+  };
+
+  const updateSelectedReelNumber = (reelId: number, reel_number: string) => {
+    setSelectedReels(selectedReels.map(r => 
+      r.reel_id === reelId ? { ...r, reel_number } : r
     ));
   };
 
@@ -730,10 +717,9 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Reel Number *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Reel Number</label>
                     <input
                       type="text"
-                      required
                       disabled={isSubmitting}
                       value={reel.reel_number}
                       onChange={(e) => updatePurchaseReel(index, 'reel_number', e.target.value)}
@@ -967,7 +953,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                                     <div className="flex-1 grid grid-cols-2 md:grid-cols-4 gap-4">
                                       <div>
                                         <span className="text-sm font-medium text-gray-700">Reel Number:</span>
-                                        <p className="text-sm text-gray-900">{reel.reel_number}</p>
+                                        <p className="text-sm text-gray-900">{reel.reel_number || 'Not set'}</p>
                                       </div>
                                       <div>
                                         <span className="text-sm font-medium text-gray-700">GSM:</span>
@@ -983,17 +969,30 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                                       </div>
                                     </div>
                                     {isSelected && (
-                                      <div className="w-32">
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
-                                        <input
-                                          type="number"
-                                          step="0.01"
-                                          required
-                                          disabled={isSubmitting}
-                                          value={selectedReels.find(r => r.reel_id === reel.id)?.rate || ''}
-                                          onChange={(e) => updateSelectedReelRate(reel.id, e.target.value)}
-                                          className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
-                                        />
+                                      <div className="flex gap-2">
+                                        <div className="w-32">
+                                          <label className="block text-sm font-medium text-gray-700 mb-1">Reel Number *</label>
+                                          <input
+                                            type="text"
+                                            required
+                                            disabled={isSubmitting}
+                                            value={selectedReels.find(r => r.reel_id === reel.id)?.reel_number || ''}
+                                            onChange={(e) => updateSelectedReelNumber(reel.id, e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                                          />
+                                        </div>
+                                        <div className="w-32">
+                                          <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            required
+                                            disabled={isSubmitting}
+                                            value={selectedReels.find(r => r.reel_id === reel.id)?.rate || ''}
+                                            onChange={(e) => updateSelectedReelRate(reel.id, e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                                          />
+                                        </div>
                                       </div>
                                     )}
                                   </div>

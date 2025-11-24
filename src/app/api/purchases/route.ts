@@ -91,45 +91,12 @@ export async function POST(request: Request) {
       );
     }
 
-    // Validate each reel
+    // Validate each reel (reel_number is optional)
     for (const reel of reels) {
-      if (!reel.reel_number || !reel.gsm || !reel.size || !reel.size_unit || 
+      if (!reel.gsm || !reel.size || !reel.size_unit || 
           reel.bf === undefined || reel.weight === undefined || !reel.shade) {
         return NextResponse.json(
-          { success: false, error: 'All reel fields (reel_number, gsm, size, size_unit, bf, weight, shade) are required' },
-          { status: 400 }
-        );
-      }
-    }
-
-    // Check for duplicate reel numbers within this purchase
-    // Exception: Skip uniqueness validation for "Malay Enterprise"
-    const companyName = (company[0].name || '').trim().toLowerCase();
-    const isMalayEnterprise = companyName === 'malay enterprise';
-    
-    if (!isMalayEnterprise) {
-      const reelNumbers = reels.map(reel => (reel.reel_number || '').trim().toLowerCase()).filter(num => num !== '');
-      const uniqueReelNumbers = new Set(reelNumbers);
-      
-      if (reelNumbers.length !== uniqueReelNumbers.size) {
-        // Find duplicates
-        const seen = new Set<string>();
-        const duplicates = new Set<string>();
-        
-        for (const num of reelNumbers) {
-          if (seen.has(num)) {
-            duplicates.add(num);
-          } else {
-            seen.add(num);
-          }
-        }
-        
-        const duplicateList = Array.from(duplicates).join(', ');
-        return NextResponse.json(
-          { 
-            success: false, 
-            error: `Duplicate reel numbers found: ${duplicateList}. Each reel number must be unique within a purchase.` 
-          },
+          { success: false, error: 'All reel fields (gsm, size, size_unit, bf, weight, shade) are required. Reel number is optional.' },
           { status: 400 }
         );
       }
@@ -145,11 +112,13 @@ export async function POST(request: Request) {
     const purchaseId = purchase[0].id;
 
     // Insert reels (rate is not set during purchase, only during sale)
+    // reel_number can be NULL if empty or not provided
     const insertedReels = [];
     for (const reel of reels) {
+      const reelNumber = reel.reel_number && reel.reel_number.trim() !== '' ? reel.reel_number.trim() : null;
       const result = await sql`
         INSERT INTO reels (purchase_id, reel_number, gsm, size, size_unit, bf, weight, shade)
-        VALUES (${purchaseId}, ${reel.reel_number}, ${reel.gsm}, ${reel.size}, ${reel.size_unit}, 
+        VALUES (${purchaseId}, ${reelNumber}, ${reel.gsm}, ${reel.size}, ${reel.size_unit}, 
                 ${reel.bf}, ${reel.weight}, ${reel.shade})
         RETURNING id, reel_number, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
       `;

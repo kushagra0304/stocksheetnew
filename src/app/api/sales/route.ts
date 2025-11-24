@@ -99,6 +99,12 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
+      if (!reel.reel_number || reel.reel_number.trim() === '') {
+        return NextResponse.json(
+          { success: false, error: 'Reel number is required for all reels in a sale' },
+          { status: 400 }
+        );
+      }
     }
 
     // Check if reels are available (not already sold)
@@ -132,12 +138,12 @@ export async function POST(request: Request) {
 
     const saleId = sale[0].id;
 
-    // Update reels with sale_id and rate
+    // Update reels with sale_id, rate, and reel_number
     const updatedReels = [];
     for (const reel of reels) {
       const result = await sql`
         UPDATE reels
-        SET sale_id = ${saleId}, rate = ${reel.rate}
+        SET sale_id = ${saleId}, rate = ${reel.rate}, reel_number = ${reel.reel_number.trim()}
         WHERE id = ${reel.reel_id} AND sale_id IS NULL
         RETURNING id, reel_number, purchase_id, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
       `;
