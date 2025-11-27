@@ -178,7 +178,7 @@ export async function POST(request: Request) {
       // Update all reels with sale_id and rate (reel_number not required for direct_ship_to)
       for (let i = 0; i < insertedReels.length; i++) {
         const reel = reels[i];
-        const updated = await sql`
+        const updated: any[] = await sql`
           UPDATE reels
           SET sale_id = ${saleId}, rate = ${reel.rate}
           WHERE id = ${insertedReels[i].id}
