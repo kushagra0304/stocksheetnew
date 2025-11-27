@@ -11,6 +11,7 @@ export async function GET() {
         s.sale_bill_date,
         s.company_id,
         c.name as sold_to,
+        s.sale_type,
         s.created_at,
         COALESCE(
           json_agg(
@@ -33,7 +34,7 @@ export async function GET() {
       FROM sales s
       INNER JOIN company c ON c.id = s.company_id
       LEFT JOIN reels r ON r.sale_id = s.id
-      GROUP BY s.id, s.sale_bill_number, s.sale_bill_date, s.company_id, c.name, s.created_at
+      GROUP BY s.id, s.sale_bill_number, s.sale_bill_date, s.company_id, c.name, s.sale_type, s.created_at
       ORDER BY s.created_at DESC
     `;
     
@@ -54,7 +55,8 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { sale_bill_number, sale_bill_date, company_id, reels } = body;
+    const { sale_bill_number, sale_bill_date, company_id, reels, sale_type } = body;
+    const saleType = sale_type || 'from_godown';
 
     // Validate required fields
     if (!sale_bill_number || !sale_bill_date || !company_id) {
@@ -99,9 +101,10 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-      if (!reel.reel_number || reel.reel_number.trim() === '') {
+      // Only require reel_number for 'from_godown' sales
+      if (saleType === 'from_godown' && (!reel.reel_number || reel.reel_number.trim() === '')) {
         return NextResponse.json(
-          { success: false, error: 'Reel number is required for all reels in a sale' },
+          { success: false, error: 'Reel number is required for all reels in a sale from godown' },
           { status: 400 }
         );
       }
@@ -131,22 +134,32 @@ export async function POST(request: Request) {
 
     // Create sale
     const sale = await sql`
-      INSERT INTO sales (sale_bill_number, sale_bill_date, company_id)
-      VALUES (${sale_bill_number}, ${sale_bill_date}, ${company_id})
-      RETURNING id, sale_bill_number, sale_bill_date, company_id, created_at
+      INSERT INTO sales (sale_bill_number, sale_bill_date, company_id, sale_type)
+      VALUES (${sale_bill_number}, ${sale_bill_date}, ${company_id}, ${saleType})
+      RETURNING id, sale_bill_number, sale_bill_date, company_id, sale_type, created_at
     `;
 
     const saleId = sale[0].id;
 
-    // Update reels with sale_id, rate, and reel_number
+    // Update reels with sale_id, rate, and reel_number (only for from_godown sales)
     const updatedReels = [];
     for (const reel of reels) {
-      const result = await sql`
-        UPDATE reels
-        SET sale_id = ${saleId}, rate = ${reel.rate}, reel_number = ${reel.reel_number.trim()}
-        WHERE id = ${reel.reel_id} AND sale_id IS NULL
-        RETURNING id, reel_number, purchase_id, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
-      `;
+      let result;
+      if (saleType === 'from_godown' && reel.reel_number) {
+        result = await sql`
+          UPDATE reels
+          SET sale_id = ${saleId}, rate = ${reel.rate}, reel_number = ${reel.reel_number.trim()}
+          WHERE id = ${reel.reel_id} AND sale_id IS NULL
+          RETURNING id, reel_number, purchase_id, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
+        `;
+      } else {
+        result = await sql`
+          UPDATE reels
+          SET sale_id = ${saleId}, rate = ${reel.rate}
+          WHERE id = ${reel.reel_id} AND sale_id IS NULL
+          RETURNING id, reel_number, purchase_id, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
+        `;
+      }
       if (result.length > 0) {
         updatedReels.push(result[0]);
       }

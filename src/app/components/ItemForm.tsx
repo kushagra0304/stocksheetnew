@@ -94,6 +94,10 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     purchase_bill_number: '',
     purchase_bill_date: '',
     company_id: '',
+    ship_to_enabled: false,
+    ship_to_customer_id: '',
+    sale_bill_number: '',
+    sale_bill_date: '',
   });
   
   // Sale form data
@@ -101,6 +105,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     sale_bill_number: '',
     sale_bill_date: '',
     company_id: '',
+    sale_type: 'from_godown',
   });
   
   // Reels for purchase mode (array of reel objects)
@@ -112,6 +117,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     bf: '',
     weight: '',
     shade: '',
+    rate: '',
   }]);
   
   // Available reels for sale mode
@@ -168,10 +174,22 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         // Restore purchase data if it exists in localStorage (regardless of mode)
         if (savedPurchaseData) {
           shouldSave.current = false;
-          setPurchaseData(savedPurchaseData.purchaseData);
-          setPurchaseReels(savedPurchaseData.purchaseReels.length > 0 
-            ? savedPurchaseData.purchaseReels 
-            : [{ reel_number: '', gsm: '', size: '', size_unit: '', bf: '', weight: '', shade: '' }]);
+          setPurchaseData({
+            purchase_bill_number: savedPurchaseData.purchaseData?.purchase_bill_number || '',
+            purchase_bill_date: savedPurchaseData.purchaseData?.purchase_bill_date || '',
+            company_id: savedPurchaseData.purchaseData?.company_id || '',
+            ship_to_enabled: savedPurchaseData.purchaseData?.ship_to_enabled ?? false,
+            ship_to_customer_id: savedPurchaseData.purchaseData?.ship_to_customer_id || '',
+            sale_bill_number: savedPurchaseData.purchaseData?.sale_bill_number || '',
+            sale_bill_date: savedPurchaseData.purchaseData?.sale_bill_date || '',
+          });
+          const restoredReels = savedPurchaseData.purchaseReels.length > 0 
+            ? savedPurchaseData.purchaseReels.map((reel: any) => ({
+                ...reel,
+                rate: reel.rate ?? ''
+              }))
+            : [{ reel_number: '', gsm: '', size: '', size_unit: '', bf: '', weight: '', shade: '', rate: '' }];
+          setPurchaseReels(restoredReels);
           setDataRestored(true);
           setTimeout(() => setDataRestored(false), 5000);
           shouldSave.current = true;
@@ -254,10 +272,22 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
 
         if (savedPurchaseData) {
           shouldSave.current = false;
-          setPurchaseData(savedPurchaseData.purchaseData);
-          setPurchaseReels(savedPurchaseData.purchaseReels.length > 0 
-            ? savedPurchaseData.purchaseReels 
-            : [{ reel_number: '', gsm: '', size: '', size_unit: '', bf: '', weight: '', shade: '' }]);
+          setPurchaseData({
+            purchase_bill_number: savedPurchaseData.purchaseData?.purchase_bill_number || '',
+            purchase_bill_date: savedPurchaseData.purchaseData?.purchase_bill_date || '',
+            company_id: savedPurchaseData.purchaseData?.company_id || '',
+            ship_to_enabled: savedPurchaseData.purchaseData?.ship_to_enabled ?? false,
+            ship_to_customer_id: savedPurchaseData.purchaseData?.ship_to_customer_id || '',
+            sale_bill_number: savedPurchaseData.purchaseData?.sale_bill_number || '',
+            sale_bill_date: savedPurchaseData.purchaseData?.sale_bill_date || '',
+          });
+          const restoredReels = savedPurchaseData.purchaseReels.length > 0 
+            ? savedPurchaseData.purchaseReels.map((reel: any) => ({
+                ...reel,
+                rate: reel.rate ?? ''
+              }))
+            : [{ reel_number: '', gsm: '', size: '', size_unit: '', bf: '', weight: '', shade: '', rate: '' }];
+          setPurchaseReels(restoredReels);
           shouldSave.current = true;
         }
       }
@@ -324,6 +354,22 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     setSuccess(false);
 
     try {
+      // Validate ship-to fields if enabled
+      if (purchaseData.ship_to_enabled) {
+        if (!purchaseData.ship_to_customer_id) {
+          throw new Error('Customer is required when "Ship to" is enabled');
+        }
+        if (!purchaseData.sale_bill_number || !purchaseData.sale_bill_date) {
+          throw new Error('Sale bill number and date are required when "Ship to" is enabled');
+        }
+        // Validate that all reels have rate when ship-to is enabled
+        for (const reel of purchaseReels) {
+          if (!reel.rate || reel.rate.trim() === '') {
+            throw new Error('Rate is required for all reels when "Ship to" is enabled');
+          }
+        }
+      }
+
       const reels = purchaseReels.map(reel => ({
         reel_number: reel.reel_number.trim() || null,
         gsm: parseInt(reel.gsm),
@@ -332,19 +378,29 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         bf: parseFloat(reel.bf),
         weight: parseFloat(reel.weight),
         shade: reel.shade,
+        rate: purchaseData.ship_to_enabled ? parseFloat(reel.rate) : undefined,
       }));
+
+      const requestBody: any = {
+        purchase_bill_number: purchaseData.purchase_bill_number,
+        purchase_bill_date: purchaseData.purchase_bill_date,
+        company_id: parseInt(purchaseData.company_id),
+        reels,
+      };
+
+      // Add ship-to data if enabled
+      if (purchaseData.ship_to_enabled) {
+        requestBody.ship_to_customer_id = parseInt(purchaseData.ship_to_customer_id);
+        requestBody.sale_bill_number = purchaseData.sale_bill_number;
+        requestBody.sale_bill_date = purchaseData.sale_bill_date;
+      }
 
       const response = await fetch('/api/purchases', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          purchase_bill_number: purchaseData.purchase_bill_number,
-          purchase_bill_date: purchaseData.purchase_bill_date,
-          company_id: parseInt(purchaseData.company_id),
-          reels,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -363,6 +419,10 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         purchase_bill_number: '',
         purchase_bill_date: '',
         company_id: '',
+        ship_to_enabled: false,
+        ship_to_customer_id: '',
+        sale_bill_number: '',
+        sale_bill_date: '',
       });
       setPurchaseReels([{
         reel_number: '',
@@ -372,6 +432,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         bf: '',
         weight: '',
         shade: '',
+        rate: '',
       }]);
       
       onItemAdded();
@@ -394,17 +455,19 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         throw new Error('Please select at least one reel');
       }
 
-      // Validate that all selected reels have reel_number
-      for (const reel of selectedReels) {
-        if (!reel.reel_number || reel.reel_number.trim() === '') {
-          throw new Error('Reel number is required for all selected reels. Please enter a reel number for each reel.');
+      // Validate reel_number only for 'from_godown' sales
+      if (saleData.sale_type === 'from_godown') {
+        for (const reel of selectedReels) {
+          if (!reel.reel_number || reel.reel_number.trim() === '') {
+            throw new Error('Reel number is required for all selected reels when sale type is "From Godown". Please enter a reel number for each reel.');
+          }
         }
       }
 
       const reels = selectedReels.map(reel => ({
         reel_id: reel.reel_id,
         rate: parseFloat(reel.rate),
-        reel_number: reel.reel_number.trim(),
+        reel_number: saleData.sale_type === 'from_godown' ? reel.reel_number.trim() : undefined,
       }));
 
       const response = await fetch('/api/sales', {
@@ -416,6 +479,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
           sale_bill_number: saleData.sale_bill_number,
           sale_bill_date: saleData.sale_bill_date,
           company_id: parseInt(saleData.company_id),
+          sale_type: saleData.sale_type,
           reels,
         }),
       });
@@ -436,6 +500,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         sale_bill_number: '',
         sale_bill_date: '',
         company_id: '',
+        sale_type: 'from_godown',
       });
       setSelectedReels([]);
       
@@ -472,6 +537,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
       bf: '',
       weight: '',
       shade: '',
+      rate: '',
     };
     setPurchaseReels([newReel, ...purchaseReels]);
   };
@@ -556,6 +622,10 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         purchase_bill_number: '',
         purchase_bill_date: '',
         company_id: '',
+        ship_to_enabled: false,
+        ship_to_customer_id: '',
+        sale_bill_number: '',
+        sale_bill_date: '',
       });
       setPurchaseReels([{
         reel_number: '',
@@ -565,6 +635,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         bf: '',
         weight: '',
         shade: '',
+        rate: '',
       }]);
     } else {
       clearLocalStorage([STORAGE_KEYS.SALE_FORM]);
@@ -572,6 +643,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         sale_bill_number: '',
         sale_bill_date: '',
         company_id: '',
+        sale_type: 'from_godown',
       });
       setSelectedReels([]);
     }
@@ -681,6 +753,76 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                   ))}
                 </select>
               </div>
+            </div>
+            
+            {/* Ship To Section */}
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="flex items-center mb-4">
+                <input
+                  type="checkbox"
+                  id="ship_to_enabled"
+                  checked={purchaseData.ship_to_enabled || false}
+                  onChange={(e) => setPurchaseData({ ...purchaseData, ship_to_enabled: e.target.checked, ship_to_customer_id: '', sale_bill_number: '', sale_bill_date: '' })}
+                  disabled={isSubmitting}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="ship_to_enabled" className="ml-2 block text-sm font-medium text-gray-700">
+                  Ship to Customer (Direct Ship To)
+                </label>
+              </div>
+              
+              {purchaseData.ship_to_enabled && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                  <div>
+                    <label htmlFor="ship_to_customer" className="block text-sm font-medium text-gray-700 mb-1">
+                      Ship To Customer *
+                    </label>
+                    <select
+                      id="ship_to_customer"
+                      required={purchaseData.ship_to_enabled}
+                      disabled={isSubmitting}
+                      value={purchaseData.ship_to_customer_id || ''}
+                      onChange={(e) => setPurchaseData({ ...purchaseData, ship_to_customer_id: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    >
+                      <option value="">Select Customer</option>
+                      {customerOptions.map((company) => (
+                        <option key={company.id} value={company.id}>
+                          {company.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="sale_bill_number" className="block text-sm font-medium text-gray-700 mb-1">
+                      Sale Bill Number *
+                    </label>
+                    <input
+                      type="text"
+                      id="sale_bill_number"
+                      required={purchaseData.ship_to_enabled}
+                      disabled={isSubmitting}
+                      value={purchaseData.sale_bill_number || ''}
+                      onChange={(e) => setPurchaseData({ ...purchaseData, sale_bill_number: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="sale_bill_date" className="block text-sm font-medium text-gray-700 mb-1">
+                      Sale Bill Date *
+                    </label>
+                    <input
+                      type="date"
+                      id="sale_bill_date"
+                      required={purchaseData.ship_to_enabled}
+                      disabled={isSubmitting}
+                      value={purchaseData.sale_bill_date || ''}
+                      onChange={(e) => setPurchaseData({ ...purchaseData, sale_bill_date: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -803,6 +945,20 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                       ))}
                     </select>
                   </div>
+                  {purchaseData.ship_to_enabled && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required={purchaseData.ship_to_enabled}
+                        disabled={isSubmitting}
+                        value={reel.rate || ''}
+                        onChange={(e) => updatePurchaseReel(index, 'rate', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
@@ -883,6 +1039,22 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                       {company.name}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="sale_type" className="block text-sm font-medium text-gray-700 mb-1">
+                  Sale Type *
+                </label>
+                <select
+                  id="sale_type"
+                  required
+                  disabled={isSubmitting}
+                  value={saleData.sale_type}
+                  onChange={(e) => setSaleData({ ...saleData, sale_type: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                >
+                  <option value="from_godown">From Godown</option>
+                  <option value="direct_ship_to">Direct Ship To</option>
                 </select>
               </div>
             </div>
@@ -970,17 +1142,19 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
                                     </div>
                                     {isSelected && (
                                       <div className="flex gap-2">
-                                        <div className="w-32">
-                                          <label className="block text-sm font-medium text-gray-700 mb-1">Reel Number *</label>
-                                          <input
-                                            type="text"
-                                            required
-                                            disabled={isSubmitting}
-                                            value={selectedReels.find(r => r.reel_id === reel.id)?.reel_number || ''}
-                                            onChange={(e) => updateSelectedReelNumber(reel.id, e.target.value)}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
-                                          />
-                                        </div>
+                                        {saleData.sale_type === 'from_godown' && (
+                                          <div className="w-32">
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">Reel Number *</label>
+                                            <input
+                                              type="text"
+                                              required={saleData.sale_type === 'from_godown'}
+                                              disabled={isSubmitting}
+                                              value={selectedReels.find(r => r.reel_id === reel.id)?.reel_number || ''}
+                                              onChange={(e) => updateSelectedReelNumber(reel.id, e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-500"
+                                            />
+                                          </div>
+                                        )}
                                         <div className="w-32">
                                           <label className="block text-sm font-medium text-gray-700 mb-1">Rate *</label>
                                           <input
