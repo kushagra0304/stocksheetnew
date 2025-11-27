@@ -1,5 +1,6 @@
 import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import type { SaleRequest, Company, Sale, Reel } from '@/lib/types';
 
 // GET - List sales with their reels
 export async function GET() {
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     // Validate company_id exists and is a customer
     const company = await sql`
       SELECT id, name, type FROM company WHERE id = ${company_id}
-    `;
+    ` as Company[];
 
     if (company.length === 0) {
       return NextResponse.json(
@@ -111,10 +112,10 @@ export async function POST(request: Request) {
     }
 
     // Check if reels are available (not already sold)
-    const reelIds = reels.map((r: any) => r.reel_id);
+    const reelIds = reels.map((r: SaleRequest['reels'][0]) => r.reel_id);
     const existingReels = await sql`
       SELECT id, sale_id FROM reels WHERE id = ANY(${reelIds})
-    `;
+    ` as Array<{ id: number; sale_id: number | null }>;
 
     for (const reel of existingReels) {
       if (reel.sale_id !== null) {
@@ -137,28 +138,28 @@ export async function POST(request: Request) {
       INSERT INTO sales (sale_bill_number, sale_bill_date, company_id, sale_type)
       VALUES (${sale_bill_number}, ${sale_bill_date}, ${company_id}, ${saleType})
       RETURNING id, sale_bill_number, sale_bill_date, company_id, sale_type, created_at
-    `;
+    ` as Sale[];
 
     const saleId = sale[0].id;
 
     // Update reels with sale_id, rate, and reel_number (only for from_godown sales)
-    const updatedReels = [];
+    const updatedReels: Reel[] = [];
     for (const reel of reels) {
-      let result;
+      let result: Reel[];
       if (saleType === 'from_godown' && reel.reel_number) {
         result = await sql`
           UPDATE reels
           SET sale_id = ${saleId}, rate = ${reel.rate}, reel_number = ${reel.reel_number.trim()}
           WHERE id = ${reel.reel_id} AND sale_id IS NULL
           RETURNING id, reel_number, purchase_id, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
-        `;
+        ` as Reel[];
       } else {
         result = await sql`
           UPDATE reels
           SET sale_id = ${saleId}, rate = ${reel.rate}
           WHERE id = ${reel.reel_id} AND sale_id IS NULL
           RETURNING id, reel_number, purchase_id, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
-        `;
+        ` as Reel[];
       }
       if (result.length > 0) {
         updatedReels.push(result[0]);

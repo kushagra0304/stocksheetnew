@@ -1,23 +1,7 @@
 'use client';
 
 import { useState, FormEvent, useEffect, useRef, useCallback } from 'react';
-
-interface Reel {
-  id: number;
-  reel_number: string | null;
-  gsm: number;
-  size: string;
-  size_unit: string;
-  bf: number;
-  weight: number;
-  shade: string;
-  rate: number | null;
-  purchase_id?: number;
-  sale_id?: number | null;
-  purchase_bill_number?: string;
-  purchase_bill_date?: string;
-  bought_from_mill?: string;
-}
+import type { Reel, PurchaseRequest, SavedPurchaseData } from '@/lib/types';
 
 interface ItemFormProps {
   onItemAdded: () => void;
@@ -154,10 +138,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         }
 
         // Check for purchase data (either if mode is purchase or if we have purchase data)
-        const savedPurchaseData = loadFromLocalStorage<{
-          purchaseData: typeof purchaseData;
-          purchaseReels: typeof purchaseReels;
-        }>(STORAGE_KEYS.PURCHASE_FORM);
+        const savedPurchaseData = loadFromLocalStorage<SavedPurchaseData>(STORAGE_KEYS.PURCHASE_FORM);
         
         // Check for sale data
         const savedSaleData = loadFromLocalStorage<{
@@ -184,7 +165,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
             sale_bill_date: savedPurchaseData.purchaseData?.sale_bill_date || '',
           });
           const restoredReels = savedPurchaseData.purchaseReels.length > 0 
-            ? savedPurchaseData.purchaseReels.map((reel: any) => ({
+            ? savedPurchaseData.purchaseReels.map((reel) => ({
                 ...reel,
                 rate: reel.rate ?? ''
               }))
@@ -263,12 +244,9 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
     if (isInitialMount.current) return;
 
     if (mode === 'purchase') {
-      // Check if purchase form is empty and data exists in localStorage
-      if (isPurchaseFormEmpty(purchaseData, purchaseReels)) {
-        const savedPurchaseData = loadFromLocalStorage<{
-          purchaseData: typeof purchaseData;
-          purchaseReels: typeof purchaseReels;
-        }>(STORAGE_KEYS.PURCHASE_FORM);
+        // Check if purchase form is empty and data exists in localStorage
+        if (isPurchaseFormEmpty(purchaseData, purchaseReels)) {
+          const savedPurchaseData = loadFromLocalStorage<SavedPurchaseData>(STORAGE_KEYS.PURCHASE_FORM);
 
         if (savedPurchaseData) {
           shouldSave.current = false;
@@ -282,7 +260,7 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
             sale_bill_date: savedPurchaseData.purchaseData?.sale_bill_date || '',
           });
           const restoredReels = savedPurchaseData.purchaseReels.length > 0 
-            ? savedPurchaseData.purchaseReels.map((reel: any) => ({
+            ? savedPurchaseData.purchaseReels.map((reel) => ({
                 ...reel,
                 rate: reel.rate ?? ''
               }))
@@ -381,19 +359,17 @@ export default function ItemForm({ onItemAdded }: ItemFormProps) {
         rate: purchaseData.ship_to_enabled ? parseFloat(reel.rate) : undefined,
       }));
 
-      const requestBody: any = {
+      const requestBody: PurchaseRequest = {
         purchase_bill_number: purchaseData.purchase_bill_number,
         purchase_bill_date: purchaseData.purchase_bill_date,
         company_id: parseInt(purchaseData.company_id),
         reels,
+        ...(purchaseData.ship_to_enabled && {
+          ship_to_customer_id: parseInt(purchaseData.ship_to_customer_id),
+          sale_bill_number: purchaseData.sale_bill_number,
+          sale_bill_date: purchaseData.sale_bill_date,
+        }),
       };
-
-      // Add ship-to data if enabled
-      if (purchaseData.ship_to_enabled) {
-        requestBody.ship_to_customer_id = parseInt(purchaseData.ship_to_customer_id);
-        requestBody.sale_bill_number = purchaseData.sale_bill_number;
-        requestBody.sale_bill_date = purchaseData.sale_bill_date;
-      }
 
       const response = await fetch('/api/purchases', {
         method: 'POST',

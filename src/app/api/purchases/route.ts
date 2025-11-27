@@ -1,5 +1,6 @@
 import { sql } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import type { Company, Reel, Purchase, Sale, PurchaseRequest, PurchaseResponse } from '@/lib/types';
 
 // GET - List purchases with their reels
 export async function GET() {
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     // Validate company_id exists and is a mill
     const company = await sql`
       SELECT id, name, type FROM company WHERE id = ${company_id}
-    `;
+    ` as Company[];
 
     if (company.length === 0) {
       return NextResponse.json(
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
     }
 
     // Validate ship-to fields if enabled
-    let customer: any[] = [];
+    let customer: Company[] = [];
     if (isShipTo) {
       if (!sale_bill_number || !sale_bill_date) {
         return NextResponse.json(
@@ -105,7 +106,7 @@ export async function POST(request: Request) {
       // Validate customer exists and is a customer type
       customer = await sql`
         SELECT id, name, type FROM company WHERE id = ${ship_to_customer_id}
-      `;
+      ` as Company[];
       
       if (customer.length === 0) {
         return NextResponse.json(
@@ -145,13 +146,13 @@ export async function POST(request: Request) {
       INSERT INTO purchases (purchase_bill_number, purchase_bill_date, company_id)
       VALUES (${purchase_bill_number}, ${purchase_bill_date}, ${company_id})
       RETURNING id, purchase_bill_number, purchase_bill_date, company_id, created_at
-    `;
+    ` as Purchase[];
 
     const purchaseId = purchase[0].id;
 
     // Insert reels (rate is not set during purchase unless ship-to is enabled)
     // reel_number can be NULL if empty or not provided
-    const insertedReels = [];
+    const insertedReels: Reel[] = [];
     for (const reel of reels) {
       const reelNumber = reel.reel_number && reel.reel_number.trim() !== '' ? reel.reel_number.trim() : null;
       const result = await sql`
@@ -159,31 +160,31 @@ export async function POST(request: Request) {
         VALUES (${purchaseId}, ${reelNumber}, ${reel.gsm}, ${reel.size}, ${reel.size_unit}, 
                 ${reel.bf}, ${reel.weight}, ${reel.shade})
         RETURNING id, reel_number, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
-      `;
+      ` as Reel[];
       insertedReels.push(result[0]);
     }
 
     // If ship-to is enabled, create sale automatically
-    let sale = null;
+    let sale: Sale[] | null = null;
     if (isShipTo) {
       // Create sale with sale_type = 'direct_ship_to'
       sale = await sql`
         INSERT INTO sales (sale_bill_number, sale_bill_date, company_id, sale_type)
         VALUES (${sale_bill_number}, ${sale_bill_date}, ${ship_to_customer_id}, 'direct_ship_to')
         RETURNING id, sale_bill_number, sale_bill_date, company_id, sale_type, created_at
-      `;
+      ` as Sale[];
 
       const saleId = sale[0].id;
 
       // Update all reels with sale_id and rate (reel_number not required for direct_ship_to)
       for (let i = 0; i < insertedReels.length; i++) {
         const reel = reels[i];
-        const updated: any[] = await sql`
+        const updated = await sql`
           UPDATE reels
           SET sale_id = ${saleId}, rate = ${reel.rate}
           WHERE id = ${insertedReels[i].id}
           RETURNING id, reel_number, gsm, size, size_unit, bf, weight, shade, rate, sale_id, created_at
-        `;
+        ` as Reel[];
         insertedReels[i] = updated[0];
       }
     }
@@ -194,11 +195,11 @@ export async function POST(request: Request) {
       bought_from_mill: company[0].name,
     };
 
-    const response: any = {
+    const response: PurchaseResponse = {
       success: true,
       data: {
-        purchase: purchaseWithCompany,
-        reels: insertedReels,
+        purchase: purchaseWithCompany as Purchase,
+        reels: insertedReels as Reel[],
       },
       message: isShipTo ? 'Purchase and sale created successfully' : 'Purchase and reels created successfully',
     };
@@ -207,7 +208,7 @@ export async function POST(request: Request) {
       response.data.sale = {
         ...sale[0],
         sold_to: customer[0].name,
-      };
+      } as Sale;
     }
 
     return NextResponse.json(response);
